@@ -50,6 +50,14 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 
 ## 📦 Install
 
+### Homebrew
+
+```bash
+brew install --cask vinimcorrea/tap/github-float
+```
+
+Upgrade with `brew upgrade --cask github-float`.
+
 ### Download
 
 1. Download **GitHubFloat.zip** from the [latest release](https://github.com/vinimcorrea/github-float/releases/latest) and unzip it.
@@ -117,7 +125,7 @@ GitHubFloat.app/Contents/MacOS/GitHubFloat --notify-test       # send a test not
 
 - [ ] Multiple projects
 - [ ] Custom tab filters (any Projects filter query)
-- [ ] Homebrew cask
+- [x] Homebrew cask
 - [ ] Notarized builds
 - [ ] Keyboard navigation inside the list
 

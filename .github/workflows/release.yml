@@ -22,3 +22,30 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" dist/GitHubFloat.zip --generate-notes --title "GitHub Float $GITHUB_REF_NAME"
           fi
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute checksum of the release zip
+        id: sum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p GitHubFloat.zip
+          echo "sha=$(sha256sum GitHubFloat.zip | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: vinimcorrea/homebrew-tap
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+          path: tap
+      - name: Update cask
+        working-directory: tap
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i -E "s/^  version \".*\"/  version \"$VERSION\"/; s/^  sha256 \".*\"/  sha256 \"${{ steps.sum.outputs.sha }}\"/" Casks/github-float.rb
+          git diff --quiet && { echo "Cask already up to date"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: github-float $VERSION"
+          git push
