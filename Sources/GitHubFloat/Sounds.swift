@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Original synthesized sounds (soft mallets and electric-piano tones), one per kind of event. Rendered to WAV at build time (`--render-sounds`)
+/// Original synthesized sounds (short glassy bells, mallets and pops), one per kind of event. Rendered to WAV at build time (`--render-sounds`)
 /// so notifications can use them and respect Focus.
 enum SoundKind: String, CaseIterable {
     case attention, bad, good, info
@@ -17,36 +17,35 @@ enum SoundKind: String, CaseIterable {
         }
     }
 
-    /// The score of each sound: soft mallet and electric-piano tones on consonant (major pentatonic) intervals.
+    /// The score of each sound: short, rising, rounded "reward" tones.
     fileprivate var notes: [Note] {
         switch self {
         case .attention:
-            // A gentle, rising "ding-ding": a fifth then a sixth, like a friendly doorbell.
-            return [Note(.g5, at: 0, for: 0.5, voice: .kalimba, gain: 0.8),
-                    Note(.d6, at: 0.13, for: 0.6, voice: .kalimba, gain: 0.75),
-                    Note(.g4, at: 0, for: 0.7, voice: .keys, gain: 0.35),
-                    Note(.d5, at: 0.13, for: 0.7, voice: .keys, gain: 0.3)]
+            // A quick "ti-ti-ding" up a major triad; the last note rings.
+            return [Note(.g5, at: 0, for: 0.07, voice: .bell, gain: 0.55),
+                    Note(.b5, at: 0.065, for: 0.07, voice: .bell, gain: 0.6),
+                    Note(.d6, at: 0.13, for: 0.38, voice: .bell, gain: 0.8),
+                    Note(.g4, at: 0.13, for: 0.3, voice: .keys, gain: 0.25)]
         case .good:
-            // A quick rolled major chord that blooms: C E G C.
-            let roll: [Double] = [.c5, .e5, .g5, .c6]
-            return roll.enumerated().flatMap { i, f in
-                [Note(f, at: Double(i) * 0.06, for: 0.9 - Double(i) * 0.06, voice: .keys, gain: 0.55),
-                 Note(f * 2, at: Double(i) * 0.06, for: 0.5, voice: .kalimba, gain: 0.35)]
-            } + [Note(.e6, at: 0.26, for: 0.7, voice: .kalimba, gain: 0.45)]
+            // The satisfying "correct!": a bright rising fifth with a sparkle on top.
+            return [Note(.e6, at: 0, for: 0.12, voice: .bell, gain: 0.7),
+                    Note(.b6, at: 0.09, for: 0.42, voice: .bell, gain: 0.85),
+                    Note(.e5, at: 0.09, for: 0.35, voice: .keys, gain: 0.3),
+                    Note(.e7, at: 0.12, for: 0.18, voice: .bell, gain: 0.12)]
         case .bad:
-            // Soft and low, never alarming: a falling fourth on warm keys.
-            return [Note(.a4, at: 0, for: 0.45, voice: .keys, gain: 0.8),
-                    Note(.e4, at: 0.16, for: 0.8, voice: .keys, gain: 0.8),
-                    Note(.a3, at: 0.16, for: 0.8, voice: .keys, gain: 0.35)]
+            // A soft, rounded "bonk-bonk": falling, short and friendly.
+            return [Note(.d5, at: 0, for: 0.12, voice: .marimba, gain: 0.8),
+                    Note(.a4, at: 0.11, for: 0.28, voice: .marimba, gain: 0.85),
+                    Note(.a3, at: 0.11, for: 0.25, voice: .keys, gain: 0.3)]
         case .info:
-            // A single soft marimba drop.
-            return [Note(.e6, at: 0, for: 0.35, voice: .marimba, gain: 0.7),
-                    Note(.e5, at: 0, for: 0.45, voice: .keys, gain: 0.25)]
+            // A bubbly "pop".
+            return [Note(.e5, at: 0, for: 0.09, voice: .pop, gain: 0.9),
+                    Note(.b5, at: 0.02, for: 0.12, voice: .bell, gain: 0.2)]
         }
     }
 }
 
-enum Voice { case kalimba, marimba, keys }
+enum Voice { case bell, marimba, keys, pop }
 
 struct Note {
     let freq: Double, start: Double, dur: Double, voice: Voice, gain: Double
@@ -56,9 +55,9 @@ struct Note {
 }
 
 private extension Double {
-    static let a3 = 220.0, e4 = 329.63, g4 = 392.0, a4 = 440.0
-    static let c5 = 523.25, d5 = 587.33, e5 = 659.25, g5 = 783.99
-    static let c6 = 1046.5, d6 = 1174.66, e6 = 1318.51
+    static let a3 = 220.0, g4 = 392.0, a4 = 440.0
+    static let d5 = 587.33, e5 = 659.25, g5 = 783.99, b5 = 987.77
+    static let d6 = 1174.66, e6 = 1318.51, b6 = 1975.53, e7 = 2637.02
 }
 
 enum Sounds {
@@ -66,42 +65,45 @@ enum Sounds {
 
     static func samples(_ kind: SoundKind) -> [Float] {
         let sr = sampleRate
-        let length = (kind.notes.map { $0.start + $0.dur }.max() ?? 0) + 0.6
+        let length = (kind.notes.map { $0.start + $0.dur }.max() ?? 0) + 0.25
         var dry = [Double](repeating: 0, count: Int(length * sr))
 
         for note in kind.notes {
             let s0 = Int(note.start * sr)
-            let n = Int((note.dur + 0.1) * sr)
+            let n = Int((note.dur + 0.08) * sr)
             let f = note.freq
+            var phase = 0.0
             for i in 0..<n where s0 + i < dry.count {
                 let t = Double(i) / sr
-                let release = t > note.dur ? exp(-(t - note.dur) / 0.03) : 1
+                let release = t > note.dur ? exp(-(t - note.dur) / 0.02) : 1
                 var v = 0.0
                 switch note.voice {
-                case .kalimba:
-                    // Pure fundamental plus quickly fading upper partials: a soft, round "tine".
-                    let attack = min(1, t / 0.004)
-                    v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.45))
-                        + 0.18 * sin(2 * .pi * f * 5.4 * t) * exp(-t / 0.025)
-                        + 0.06 * sin(2 * .pi * f * 2 * t) * exp(-t / 0.12))
+                case .bell:
+                    // Glassy bell: fundamental, a soft octave and a quick shimmer partial.
+                    let attack = min(1, t / 0.002)
+                    let body = exp(-t / (note.dur * 0.5))
+                    v = attack * (sin(2 * .pi * f * t) * body
+                        + 0.3 * sin(2 * .pi * f * 2 * t) * exp(-t / (note.dur * 0.25))
+                        + 0.12 * sin(2 * .pi * f * 3.01 * t) * exp(-t / 0.03))
                 case .marimba:
                     let attack = min(1, t / 0.003)
-                    v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.35))
-                        + 0.25 * sin(2 * .pi * f * 3.93 * t) * exp(-t / 0.03))
+                    v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.45))
+                        + 0.22 * sin(2 * .pi * f * 3.93 * t) * exp(-t / 0.02))
                 case .keys:
-                    // Rhodes-like FM: the bell-ish bite fades out, leaving a warm sine.
-                    let attack = min(1, t / 0.008)
-                    let index = 1.1 * exp(-t / 0.12) + 0.15
-                    v = attack * sin(2 * .pi * f * t + index * sin(2 * .pi * f * t)) * exp(-t / (note.dur * 0.55))
+                    let attack = min(1, t / 0.006)
+                    let index = 0.9 * exp(-t / 0.08) + 0.1
+                    v = attack * sin(2 * .pi * f * t + index * sin(2 * .pi * f * t)) * exp(-t / (note.dur * 0.5))
+                case .pop:
+                    // A sine whose pitch jumps up an octave in a few ms: the "bubble" sound.
+                    phase += f * (1 + 1.2 * (1 - exp(-t / 0.012))) / sr
+                    v = min(1, t / 0.001) * sin(2 * .pi * phase) * exp(-t / 0.035)
                 }
                 dry[s0 + i] += note.gain * release * v
             }
         }
 
-        // Space: a soft echo plus a small Schroeder reverb.
-        var wet = dry
-        let echo = Int(0.15 * sr)
-        for i in echo..<wet.count { wet[i] += 0.12 * wet[i - echo] }
+        // Space: a small Schroeder reverb.
+        let wet = dry
         var verb = [Double](repeating: 0, count: wet.count)
         for ms in [29.7, 37.1, 41.1, 43.7] {
             let d = Int(ms / 1000 * sr)
@@ -115,7 +117,7 @@ enum Sounds {
             for i in d..<verb.count { out[i] = -g * verb[i] + verb[i - d] + g * out[i - d] }
             verb = out
         }
-        var mix = wet.indices.map { wet[$0] + 0.18 * verb[$0] }
+        var mix = wet.indices.map { wet[$0] + 0.08 * verb[$0] }
 
         // Warm it up: tame the top end and add gentle saturation.
         var y = 0.0
