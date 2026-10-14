@@ -1,0 +1,23 @@
+Sources/GitHubFloat/Model.swift
+  s_741fa47a91e83a::t_add793e86c38ad 105,118,189-208,217,282-286,295,310,329,418-425,427,458-467,475,484,495,500
+Sources/GitHubFloat/Notifier.swift
+  s_741fa47a91e83a::t_4a595d71cce2fc 14,25-35
+Sources/GitHubFloat/Views.swift
+  s_741fa47a91e83a::t_e7dbab7d63a1c1 22,101,143-144,156,159,202-225,260,278-281,283-284,296,330-333,379-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c05e49f12f700f57b24aef659b1bd8897b62c754",
+  "prompts": {},
+  "sessions": {
+    "s_741fa47a91e83a": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ec570f812ffeuUlL8en7Jz4XuY",
+        "model": "claude-sonnet-5.5"
+      },
+      "human_author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
