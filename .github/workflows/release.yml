@@ -1,0 +1,24 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build universal app
+        run: VERSION="${GITHUB_REF_NAME#v}" ./build.sh --dist
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/GitHubFloat.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/GitHubFloat.zip --generate-notes --title "GitHub Float $GITHUB_REF_NAME"
+          fi

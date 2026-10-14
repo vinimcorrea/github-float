@@ -1,0 +1,392 @@
+import AppKit
+import Combine
+import ServiceManagement
+import SwiftUI
+import UserNotifications
+
+private extension NSRect {
+    var area: CGFloat { isNull ? 0 : width * height }
+}
+
+/// Lets clicks act immediately even when the panel isn't the key window.
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+final class FloatingPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+    private let settings = Settings.shared
+    private lazy var store = Store(settings: settings)
+    private var panel: FloatingPanel!
+    private var statusItem: NSStatusItem!
+    private let collapsedHeight: CGFloat = 50
+    private let minExpandedHeight: CGFloat = 240
+
+    /// Persisted separately from the window frame so collapsing never overwrites it.
+    private var expandedHeight: CGFloat {
+        get {
+            let v = CGFloat(UserDefaults.standard.double(forKey: "expandedHeight"))
+            return v > 0 ? max(minExpandedHeight, v) : 460
+        }
+        set { UserDefaults.standard.set(Double(max(minExpandedHeight, newValue)), forKey: "expandedHeight") }
+    }
+    private var bag: Set<AnyCancellable> = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        buildPanel()
+        buildStatusItem()
+        Notifier.shared.setUp()
+
+        settings.$opacity.sink { [weak self] in self?.panel.alphaValue = $0 }.store(in: &bag)
+        settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
+        store.$mine.combineLatest(store.$open, store.$changed, store.$error)
+            .sink { [weak self] mine, open, changed, error in
+                self?.updateStatusItem(mine: mine.count, open: open.count, changed: changed.count, error: error != nil)
+            }
+            .store(in: &bag)
+
+        store.start()
+        if !settings.isConfigured {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.configureProject() }
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanel()
+        return true
+    }
+
+    // MARK: Panel
+
+    private func buildPanel() {
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let rect = NSRect(x: screen.maxX - 380, y: screen.maxY - expandedHeight - 20, width: 360, height: expandedHeight)
+        panel = FloatingPanel(
+            contentRect: rect,
+            styleMask: [.titled, .fullSizeContentView, .resizable, .nonactivatingPanel, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        [.closeButton, .miniaturizeButton, .zoomButton].forEach { panel.standardWindowButton($0)?.isHidden = true }
+        panel.isMovableByWindowBackground = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.delegate = self
+
+        let blur = NSVisualEffectView()
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 12
+        blur.layer?.masksToBounds = true
+
+        let host = FirstClickHostingView(rootView: ContentView(store: store, settings: settings,
+                                                         showMenu: { [weak self] in self?.popUpMenu() },
+                                                         configure: { [weak self] in self?.configureProject() }))
+        host.sizingOptions = [] // the window decides its size; SwiftUI must not impose min/max constraints
+        host.translatesAutoresizingMaskIntoConstraints = false
+        blur.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+            host.topAnchor.constraint(equalTo: blur.topAnchor),
+            host.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
+        ])
+        panel.contentView = blur
+
+        panel.setFrameAutosaveName("GitHubFloatPanel")
+        applyCollapsed(settings.collapsed)
+        panel.orderFrontRegardless()
+    }
+
+    /// Resizes instantly (animated frames block the UI), keeping the top edge in place.
+    private func applyCollapsed(_ collapsed: Bool) {
+        let height = collapsed ? collapsedHeight : expandedHeight
+        var f = panel.frame
+        f.origin.y += f.height - height
+        f.size.height = height
+        if collapsed {
+            panel.minSize = NSSize(width: 260, height: collapsedHeight)
+            panel.maxSize = NSSize(width: 10_000, height: collapsedHeight)
+        } else {
+            panel.minSize = NSSize(width: 260, height: minExpandedHeight)
+            panel.maxSize = NSSize(width: 10_000, height: 10_000)
+        }
+        let screen = NSScreen.screens.max { $0.frame.intersection(f).area < $1.frame.intersection(f).area }
+        // Keep the panel vertically on its screen without moving it sideways.
+        if let vf = screen?.visibleFrame, screen!.frame.intersects(f) {
+            if f.minY < vf.minY { f.origin.y = vf.minY }
+            if f.maxY > vf.maxY { f.origin.y = vf.maxY - f.height }
+        }
+        panel.setFrame(f, display: true, animate: false)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        if !settings.collapsed { expandedHeight = panel.frame.height }
+    }
+
+    private func showPanel() {
+        panel.orderFrontRegardless()
+    }
+
+    @objc private func togglePanel() {
+        if panel.isVisible { panel.orderOut(nil) } else { showPanel() }
+    }
+
+    // MARK: Status item
+
+    private func buildStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.stack.badge.person.crop", accessibilityDescription: "GitHub Float")
+        statusItem.button?.imagePosition = .imageLeading
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    private func updateStatusItem(mine: Int, open: Int, changed: Int, error: Bool) {
+        statusItem.button?.title = error ? " !" : " \(mine) · \(open)" + (changed > 0 ? " •" : "")
+        statusItem.button?.toolTip = "Mine: \(mine) · Needs reviewer: \(open)"
+    }
+
+    private func popUpMenu() {
+        let menu = NSMenu()
+        populate(menu)
+        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        populate(menu)
+    }
+
+    private func populate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        menu.addItem(item(panel.isVisible ? "Hide Panel" : "Show Panel", #selector(togglePanel), key: ""))
+        menu.addItem(item("Refresh Now", #selector(refreshNow), key: "r"))
+        menu.addItem(item("Connect a Project…", #selector(configureProject), key: ","))
+        if let url = store.projectURL { menu.addItem(item("Open Board", #selector(openBoard), key: "b", represented: url)) }
+        menu.addItem(.separator())
+
+        let statusMenu = NSMenu()
+        let names = store.statusOptions.isEmpty
+            ? ["Ready to Start", "In Progress", "In Review", "Reviewed", "Ready to Verify", "To Deploy"]
+            : store.statusOptions.map(\.name)
+        for name in names {
+            let i = item(name, #selector(toggleStatus(_:)), represented: name)
+            i.state = settings.statuses.contains(name) ? .on : .off
+            statusMenu.addItem(i)
+        }
+        menu.addItem(submenu("\"Mine\" Statuses", statusMenu))
+
+        let reviewMenu = NSMenu()
+        for name in names {
+            let i = item(name, #selector(setReviewStatus(_:)), represented: name)
+            i.state = settings.reviewStatus == name ? .on : .off
+            reviewMenu.addItem(i)
+        }
+        menu.addItem(submenu("\"Needs Reviewer\" Status", reviewMenu))
+
+        let pollMenu = NSMenu()
+        for (title, secs) in [("30 seconds", 30), ("1 minute", 60), ("2 minutes", 120), ("5 minutes", 300)] {
+            let i = item(title, #selector(setPoll(_:)), represented: secs)
+            i.state = settings.pollSeconds == secs ? .on : .off
+            pollMenu.addItem(i)
+        }
+        menu.addItem(submenu("Poll Every", pollMenu))
+
+        let opacityMenu = NSMenu()
+        for pct in [100, 95, 85, 70, 50] {
+            let i = item("\(pct)%", #selector(setOpacity(_:)), represented: Double(pct) / 100)
+            i.state = abs(settings.opacity - Double(pct) / 100) < 0.01 ? .on : .off
+            opacityMenu.addItem(i)
+        }
+        menu.addItem(submenu("Opacity", opacityMenu))
+
+        let notify = item("Notifications", #selector(toggleNotifications), key: "")
+        notify.state = settings.notifications ? .on : .off
+        menu.addItem(notify)
+        menu.addItem(item("Send Test Notification", #selector(testNotification), key: ""))
+
+        let sound = item("Sound on Changes", #selector(toggleSound), key: "")
+        sound.state = settings.soundOnChange ? .on : .off
+        menu.addItem(sound)
+
+        let login = item("Launch at Login", #selector(toggleLogin), key: "")
+        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(login)
+
+        menu.addItem(.separator())
+        menu.addItem(item("Quit GitHub Float", #selector(quit), key: "q"))
+    }
+
+    private func item(_ title: String, _ action: Selector, key: String = "", represented: Any? = nil) -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        i.target = self
+        i.representedObject = represented
+        return i
+    }
+
+    private func submenu(_ title: String, _ sub: NSMenu) -> NSMenuItem {
+        let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        i.submenu = sub
+        return i
+    }
+
+    // MARK: Actions
+
+    @objc func configureProject() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Connect a GitHub Project"
+        alert.informativeText = "Paste the project URL, e.g.\nhttps://github.com/orgs/acme/projects/5\nhttps://github.com/users/octocat/projects/2"
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.placeholderString = "https://github.com/orgs/<org>/projects/<number>"
+        if settings.isConfigured {
+            field.stringValue = store.projectURL ?? "https://github.com/orgs/\(settings.owner)/projects/\(settings.projectNumber)"
+        }
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Connect")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        while alert.runModal() == .alertFirstButtonReturn {
+            if let p = Settings.parseProject(field.stringValue) {
+                settings.owner = p.owner
+                settings.projectNumber = p.number
+                store.start()
+                return
+            }
+            alert.informativeText = "⚠️ That doesn't look like a GitHub Project URL.\nExpected https://github.com/orgs/<org>/projects/<number> or /users/<user>/projects/<number>."
+        }
+    }
+
+    @objc private func refreshNow() { Task { await store.refresh() } }
+
+    @objc private func openBoard(_ sender: NSMenuItem) {
+        if let s = sender.representedObject as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
+    }
+
+    @objc private func toggleStatus(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        if let idx = settings.statuses.firstIndex(of: name) { settings.statuses.remove(at: idx) }
+        else { settings.statuses.append(name) }
+    }
+
+    @objc private func setReviewStatus(_ sender: NSMenuItem) {
+        if let v = sender.representedObject as? String { settings.reviewStatus = v }
+    }
+
+    @objc private func setPoll(_ sender: NSMenuItem) {
+        if let v = sender.representedObject as? Int { settings.pollSeconds = v }
+    }
+
+    @objc private func setOpacity(_ sender: NSMenuItem) {
+        if let v = sender.representedObject as? Double { settings.opacity = v }
+    }
+
+    @objc private func toggleSound() { settings.soundOnChange.toggle() }
+
+    @objc private func toggleNotifications() { settings.notifications.toggle() }
+
+    @objc private func testNotification() {
+        Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉",
+                                   url: store.projectURL, id: "test"), sound: settings.soundOnChange) { error in
+            guard let error else { return }
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "Notifications are blocked"
+                alert.informativeText = "\(error.localizedDescription)\n\nEnable them in System Settings → Notifications → GitHubFloat."
+                alert.runModal()
+            }
+        }
+    }
+
+    @objc private func toggleLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
+            else { try SMAppService.mainApp.register() }
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+        }
+    }
+
+    @objc private func quit() { NSApp.terminate(nil) }
+}
+
+// `GitHubFloat --notify-test` posts a sample notification and reports the authorization state.
+if CommandLine.arguments.contains("--notify-test") {
+    let sema = DispatchSemaphore(value: 0)
+    let center = UNUserNotificationCenter.current()
+    center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+        print("granted=\(granted) error=\(error?.localizedDescription ?? "-")")
+        Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉", url: nil, id: "test"), sound: true) { err in
+            print("posted error=\(err?.localizedDescription ?? "-")")
+            sema.signal()
+        }
+    }
+    sema.wait()
+    exit(0)
+}
+
+if let i = CommandLine.arguments.firstIndex(of: "--screenshots") {
+    let dir = CommandLine.arguments.count > i + 1 ? CommandLine.arguments[i + 1] : "docs"
+    MainActor.assumeIsolated {
+        _ = NSApplication.shared
+        Screenshots.render(to: dir)
+    }
+    UserDefaults.standard.removePersistentDomain(forName: "githubfloat.screenshots")
+    exit(0)
+}
+
+// `GitHubFloat --dump` prints the current board snapshot to stdout (handy for debugging).
+if CommandLine.arguments.contains("--dump") {
+    let s = Settings.shared
+    let sema = DispatchSemaphore(value: 0)
+    Task.detached {
+        do {
+            guard s.isConfigured else { print("No project configured. Use \"Connect a Project…\" in the app."); sema.signal(); return }
+            let snap = try await GitHubClient().fetchBoard(owner: s.owner, number: s.projectNumber,
+                                                           mineFilter: s.mineFilter, openFilter: s.openFilter)
+            print("\(snap.projectTitle) — viewer: \(snap.viewer)")
+            func dump(_ title: String, _ tasks: [BoardTask]) {
+                print("== \(title) (\(tasks.count))")
+                for t in tasks {
+                    print("[\(t.status) since \(t.statusSince.map { "\($0)" } ?? "?")] \(t.repo ?? "-")#\(t.number.map(String.init) ?? "-") \(t.title) — assignees: \(t.assignees.joined(separator: ","))")
+                    for pr in t.prs {
+                        let reviewers = pr.reviewers.map { "\($0.login)=\($0.state)" }.joined(separator: ", ")
+                        print("    PR #\(pr.number) \(pr.stage.label) checks=\(pr.checks?.rawValue ?? "-") \(reviewers)")
+                    }
+                }
+            }
+            dump("Mine: \(s.mineFilter)", snap.mine.compactMap(BoardTask.init))
+            dump("Needs reviewer: \(s.openFilter) + <2 assignees", snap.open.compactMap(BoardTask.init).filter { $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) })
+        } catch {
+            print("ERROR: \(error.localizedDescription)")
+        }
+        sema.signal()
+    }
+    sema.wait()
+    exit(0)
+}
+
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)
+    withExtendedLifetime(delegate) { app.run() }
+}
