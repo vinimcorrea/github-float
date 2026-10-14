@@ -1,0 +1,14 @@
+Sources/GitHubFloat/Sounds.swift
+  h_4635714518fa69 4,20,24-28,30-34,36-39,41-43,48,58-60,68,73,75,78,81-87,90-91,93-99,105-106,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bfbec7f30e863c5bc772fa0b5de62b0b05a8b11",
+  "prompts": {},
+  "humans": {
+    "h_4635714518fa69": {
+      "author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
