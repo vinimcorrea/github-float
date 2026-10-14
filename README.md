@@ -37,6 +37,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 - 👤 **Mine**: your tasks grouped by status (In Progress, In Review, Reviewed), each with its linked PRs.
 - 🗂️ **Your layout**: click a section header to fold it, and drag headers to put the status you care about first (or right-click → *Move Up* / *Move Down*).
 - 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.
+- 🚚 **Moves the card for you**: approve and the card goes to the next status (e.g. *Reviewed*); request changes and it goes back to *In Progress* and you're unassigned. Toggle it with *Move Cards After My Review*.
 - 🔍 **Review state at a glance**: *awaiting review*, *being reviewed*, *changes requested*, *approved*, *merged*, plus the reviewers and CI status (✅ ❌ ⏳).
 - 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, so you can pick one up in one click.
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.
@@ -102,10 +103,12 @@ Your project needs a single-select **Status** field (the default in GitHub Proje
 | Tab | Shows |
 |---|---|
 | **Mine** | Items assigned to you whose Status is one of the selected statuses (default: *In Progress*, *In Review*, *Reviewed*), excluding the ones you are reviewing. |
-| **Reviewing** | Items assigned to you where someone else authored the linked PR (or, without a PR, is the first assignee), while the PR is still open. *Your turn* means you have not reviewed yet or a re-review was requested. |
+| **Reviewing** | Items assigned to you where someone else authored the linked PR (or, without a PR, is the first assignee), while the PR is still open. *Your turn* means you have not reviewed yet or a re-review was requested. A task leaves once you approve or request changes. |
 | **Needs reviewer** | Open items in the review status (default: *In Review*) **not** assigned to you that have fewer than 2 assignees. The convention: the author is the first assignee, and a reviewer adds themselves as the second one. |
 
 Review stage of each linked PR: merged/closed → draft → approved / changes requested → being reviewed (a review was submitted) → awaiting review (reviewers requested) → no reviewers. Bot reviews and the author's own comments are ignored.
+
+When you approve a task that is in the review status, GitHub Float moves it to the next status on the board. When you request changes, it moves the task to *In Progress* and removes you from its assignees. Only reviews submitted after the task entered the review status count, so older reviews never move a card back. This needs the `project` scope (`gh auth refresh -s project`).
 
 ## ⌨️ Shortcuts
 

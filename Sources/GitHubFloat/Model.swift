@@ -53,6 +53,7 @@ struct ReviewerState: Hashable {
     let login: String
     /// APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED or REQUESTED
     let state: String
+    var submittedAt: Date?
 
     var symbol: String {
         switch state {
@@ -119,18 +120,20 @@ struct PullRequest: Identifiable, Hashable {
         checks = n.state != "OPEN" ? nil : n.commits?.nodes?.compactMap { $0 }.last?.commit.statusCheckRollup.flatMap { CheckState(rawValue: $0.state) }
 
         var byLogin: [String: String] = [:]
+        var at: [String: Date] = [:]
         var order: [String] = []
         for r in n.latestReviews?.nodes?.compactMap({ $0 }) ?? [] where r.state != "PENDING" {
             guard let login = r.author?.login, login != n.author?.login, !Self.isBot(login) else { continue }
             if byLogin[login] == nil { order.append(login) }
             byLogin[login] = r.state
+            at[login] = r.submittedAt.flatMap(parseISODate)
         }
         let requested = n.reviewRequests?.nodes?.compactMap { $0?.requestedReviewer.flatMap { $0.login ?? $0.name } } ?? []
         for login in requested {
             if byLogin[login] == nil { order.append(login) }
             byLogin[login] = "REQUESTED" // re-requested reviews are waiting again
         }
-        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!) }
+        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!, submittedAt: at[$0]) }
 
         let submitted = byLogin.values.contains { $0 != "REQUESTED" && $0 != "DISMISSED" }
         if n.state == "MERGED" { stage = .merged }
@@ -144,8 +147,19 @@ struct PullRequest: Identifiable, Hashable {
     }
 }
 
+fileprivate let isoFractional: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+fileprivate let isoPlain = ISO8601DateFormatter()
+
+func parseISODate(_ s: String) -> Date? { isoFractional.date(from: s) ?? isoPlain.date(from: s) }
+
 struct BoardTask: Identifiable, Hashable {
     let id: String
+    /// Node id of the issue / pull request / draft behind the card.
+    let contentId: String?
     let status: String
     let kind: String
     let repo: String?
@@ -156,16 +170,10 @@ struct BoardTask: Identifiable, Hashable {
     let statusSince: Date?
     let prs: [PullRequest]
 
-    private static let iso: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-    private static let isoPlain = ISO8601DateFormatter()
-
     init?(_ item: ItemNode) {
         guard let c = item.content else { return nil }
         id = item.id
+        contentId = c.id
         status = item.status?.name ?? "No status"
         kind = c.typename
         repo = c.repository?.name
@@ -173,7 +181,7 @@ struct BoardTask: Identifiable, Hashable {
         title = c.title ?? "(untitled)"
         url = c.url
         assignees = c.assignees.filter { !PullRequest.isBot($0) }
-        statusSince = item.status?.updatedAt.flatMap { Self.iso.date(from: $0) ?? Self.isoPlain.date(from: $0) }
+        statusSince = item.status?.updatedAt.flatMap(parseISODate)
         if let pr = c.pr {
             prs = [PullRequest(pr)]
         } else {
@@ -198,6 +206,13 @@ struct BoardTask: Identifiable, Hashable {
     /// Your own review on the linked PRs (nil when you haven't been requested or reviewed yet).
     func reviewState(of viewer: String) -> String? {
         prs.lazy.compactMap { $0.reviewers.first { $0.login == viewer }?.state }.first
+    }
+
+    /// Your most recent approval or change request across the linked PRs.
+    func verdict(of viewer: String) -> ReviewerState? {
+        prs.compactMap { $0.reviewers.first { $0.login == viewer } }
+            .filter { $0.state == "APPROVED" || $0.state == "CHANGES_REQUESTED" }
+            .max { ($0.submittedAt ?? .distantPast) < ($1.submittedAt ?? .distantPast) }
     }
 
     /// Whether the ball is in your court: no review from you yet, or your review was re-requested.
@@ -240,6 +255,9 @@ final class Settings: ObservableObject {
     @Published var soundStyle: String { didSet { d.set(soundStyle, forKey: "soundStyle") } }
     /// Custom order of the "Mine" status sections (drag and drop); statuses not listed follow the board order.
     @Published var sectionOrder: [String] { didSet { d.set(sectionOrder, forKey: "sectionOrder") } }
+    /// After you approve, move the card to the status after the review one; after you request changes,
+    /// move it back to "In Progress" and unassign yourself.
+    @Published var autoMove: Bool { didSet { d.set(autoMove, forKey: "autoMove") } }
     /// Folded sections, keyed by "<tab>:<title>".
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
@@ -256,6 +274,7 @@ final class Settings: ObservableObject {
             "soundOnChange": true,
             "notifications": true,
             "soundStyle": "synth",
+            "autoMove": true,
         ])
         owner = d.string(forKey: "owner") ?? ""
         projectNumber = d.integer(forKey: "projectNumber")
@@ -268,6 +287,7 @@ final class Settings: ObservableObject {
         soundOnChange = d.bool(forKey: "soundOnChange")
         notifications = d.bool(forKey: "notifications")
         soundStyle = d.string(forKey: "soundStyle") ?? "synth"
+        autoMove = d.bool(forKey: "autoMove")
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
     }
@@ -319,6 +339,9 @@ final class Store: ObservableObject {
     private var previousMine: [String: BoardTask] = [:]
     private var previousReviewing: [String: BoardTask] = [:]
     private var previousOpen: [String: BoardTask] = [:]
+    private var board: (viewerId: String, projectId: String, statusFieldId: String)?
+    /// Cards already moved after your review (by item id + review time), so each review is handled once.
+    private var handledVerdicts: Set<String> = []
     private var loop: Task<Void, Never>?
     private var failures = 0
     private var paused = false
@@ -467,10 +490,52 @@ final class Store: ObservableObject {
     }
 
     /// Statuses worth a notification when your task enters them: the one right after the review status (e.g. "Reviewed").
-    private var notifyStatuses: Set<String> {
+    private var notifyStatuses: Set<String> { [statusAfterReview] }
+
+    private var statusAfterReview: String {
         let names = statusOptions.map(\.name)
-        guard let i = names.firstIndex(of: settings.reviewStatus), i + 1 < names.count else { return ["Reviewed"] }
-        return [names[i + 1]]
+        guard let i = names.firstIndex(of: settings.reviewStatus), i + 1 < names.count else { return "Reviewed" }
+        return names[i + 1]
+    }
+
+    private func option(named name: String) -> StatusOption? {
+        statusOptions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    /// Moves cards you just reviewed: approved -> the status after review, changes requested -> In Progress + unassign you.
+    /// Only reviews submitted after the card entered the review status count, so older verdicts never move cards back.
+    private func applyVerdicts(_ tasks: [BoardTask], viewer: String) {
+        guard settings.autoMove, let board else { return }
+        for t in tasks where t.status == settings.reviewStatus {
+            guard let v = t.verdict(of: viewer), let at = v.submittedAt, at > (t.statusSince ?? .distantPast) else { continue }
+            let key = "\(t.id)@\(at.timeIntervalSince1970)"
+            guard !handledVerdicts.contains(key) else { continue }
+            handledVerdicts.insert(key)
+            let approved = v.state == "APPROVED"
+            let target = option(named: approved ? statusAfterReview : "In Progress")
+            Task { [weak self] in
+                guard let self else { return }
+                var done: [String] = []
+                do {
+                    if let id = target?.id {
+                        try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: id)
+                        done.append("Moved to \(target!.name)")
+                    }
+                    if !approved, let content = t.contentId, t.assignees.contains(viewer) {
+                        try await client.removeAssignee(board.viewerId, from: content)
+                        done.append("You were unassigned")
+                    }
+                    if !done.isEmpty, settings.notifications {
+                        Notifier.shared.post(.init(title: "\(approved ? "Approved" : "Changes requested") · \(t.repo.map { "\($0)#\(t.number ?? 0)" } ?? "Draft")",
+                                                   body: "\(t.title)\n" + done.joined(separator: " · "),
+                                                   url: t.url, id: "verdict-\(t.id)", kind: .info), sound: false)
+                    }
+                } catch {
+                    self.error = "Could not update \(t.title): \(error.localizedDescription)"
+                }
+                await self.refresh()
+            }
+        }
     }
 
     private func apply(_ snap: BoardSnapshot) {
@@ -479,12 +544,15 @@ final class Store: ObservableObject {
         if projectURL != snap.projectURL { projectURL = snap.projectURL }
         if statusOptions != snap.statusOptions { statusOptions = snap.statusOptions }
         lastUpdated = Date()
+        if let v = snap.viewerId, let p = snap.projectId, let f = snap.statusFieldId { board = (v, p, f) }
 
         let assigned = snap.mine.compactMap(BoardTask.init)
+        applyVerdicts(assigned.filter { $0.isReviewing(by: snap.viewer) }, viewer: snap.viewer)
         let newMine = assigned.filter { !$0.isReviewing(by: snap.viewer) && (settings.statuses.isEmpty || settings.statuses.contains($0.status)) }
-        // Reviewing = others' work assigned to you, until its PRs are merged or closed.
+        // Reviewing = others' work assigned to you, until you approve / request changes or its PRs are merged or closed.
         let newReviewing = assigned
             .filter { $0.isReviewing(by: snap.viewer) && ($0.prs.isEmpty || $0.prs.contains { $0.stage != .merged && $0.stage != .closed }) }
+            .filter { $0.verdict(of: snap.viewer) == nil }
             .sorted {
                 let a = $0.awaitsReview(from: snap.viewer), b = $1.awaitsReview(from: snap.viewer)
                 if a != b { return a }

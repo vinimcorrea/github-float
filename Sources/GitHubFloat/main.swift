@@ -223,6 +223,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(notify)
         menu.addItem(item("Send Test Notification", #selector(testNotification), key: ""))
 
+        let autoMove = item("Move Cards After My Review", #selector(toggleAutoMove), key: "")
+        autoMove.state = settings.autoMove ? .on : .off
+        autoMove.toolTip = "Approve → next status after review. Request changes → In Progress and you're unassigned."
+        menu.addItem(autoMove)
+
         let soundMenu = NSMenu()
         for (title, style) in [("GitHub Float Synth", "synth"), ("macOS Default", "system"), ("Off", "off")] {
             let i = item(title, #selector(setSoundStyle(_:)), key: "", represented: style)
@@ -322,6 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func toggleNotifications() { settings.notifications.toggle() }
+
+    @objc private func toggleAutoMove() { settings.autoMove.toggle() }
 
     @objc private func testNotification() {
         Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉",

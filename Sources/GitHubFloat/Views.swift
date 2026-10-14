@@ -261,6 +261,7 @@ struct ContentView: View {
                        viewer: store.viewer,
                        tab: tab,
                        isNew: store.changed.contains(key)) { store.acknowledge(key) }
+            .id(key + task.signature) // redraw when the card moves between sections
     }
 
     @ViewBuilder

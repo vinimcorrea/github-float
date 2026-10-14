@@ -12,18 +12,22 @@ struct GQLError: Decodable { let message: String }
 struct DataNode: Decodable {
     let viewer: Viewer
     let owner: Owner?
-    struct Viewer: Decodable { let login: String }
+    struct Viewer: Decodable { let login: String; let id: String? }
     struct Owner: Decodable { let projectV2: ProjectNode? }
 }
 
 struct ProjectNode: Decodable {
+    let id: String?
     let title: String
     let url: String
     let statusField: StatusField?
     let mine: Items?
     let open: Items?
 
-    struct StatusField: Decodable { let options: [StatusOption]? }
+    struct StatusField: Decodable {
+        let id: String?
+        let options: [StatusOption]?
+    }
     struct Items: Decodable {
         let pageInfo: PageInfo
         let nodes: [ItemNode]
@@ -37,6 +41,7 @@ struct ProjectNode: Decodable {
 struct StatusOption: Decodable, Hashable {
     let name: String
     let color: String
+    var id: String?
 }
 
 struct ItemNode: Decodable {
@@ -79,6 +84,7 @@ struct PRNode: Decodable {
     struct Review: Decodable {
         let author: Author?
         let state: String
+        let submittedAt: String?
         struct Author: Decodable { let login: String }
     }
     struct CommitWrap: Decodable {
@@ -90,6 +96,7 @@ struct PRNode: Decodable {
 
 struct ContentNode: Decodable {
     let typename: String
+    let id: String?
     let number: Int?
     let title: String?
     let url: String?
@@ -100,13 +107,14 @@ struct ContentNode: Decodable {
     let pr: PRNode?
 
     enum CodingKeys: String, CodingKey {
-        case typename = "__typename", number, title, url, issueState, repository, assignees
+        case typename = "__typename", id, number, title, url, issueState, repository, assignees
         case closedByPullRequestsReferences
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         typename = try c.decode(String.self, forKey: .typename)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
         number = try c.decodeIfPresent(Int.self, forKey: .number)
         title = try c.decodeIfPresent(String.self, forKey: .title)
         url = try c.decodeIfPresent(String.self, forKey: .url)
@@ -144,6 +152,9 @@ struct BoardSnapshot {
     let statusOptions: [StatusOption]
     let mine: [ItemNode]
     let open: [ItemNode]
+    var viewerId: String?
+    var projectId: String?
+    var statusFieldId: String?
 }
 
 actor GitHubClient {
@@ -152,15 +163,15 @@ actor GitHubClient {
     /// Both tabs are fetched in a single request through two filtered aliases.
     private static let query = """
     query($owner:String!, $number:Int!, $qMine:String!, $qOpen:String!, $cMine:String, $cOpen:String, $withMine:Boolean!, $withOpen:Boolean!) {
-      viewer { login }
+      viewer { login id }
       owner: repositoryOwner(login:$owner) {
         ... on Organization { projectV2(number:$number) { ...Board } }
         ... on User { projectV2(number:$number) { ...Board } }
       }
     }
     fragment Board on ProjectV2 {
-      title url
-      statusField: field(name:"Status") { ... on ProjectV2SingleSelectField { options { name color } } }
+      id title url
+      statusField: field(name:"Status") { ... on ProjectV2SingleSelectField { id options { id name color } } }
       mine: items(first:50, after:$cMine, query:$qMine) @include(if:$withMine) { ...Items }
       open: items(first:50, after:$cOpen, query:$qOpen) @include(if:$withOpen) { ...Items }
     }
@@ -171,9 +182,9 @@ actor GitHubClient {
         status: fieldValueByName(name:"Status") { ... on ProjectV2ItemFieldSingleSelectValue { name updatedAt } }
         content {
           __typename
-          ... on DraftIssue { title assignees(first:10) { nodes { login } } }
+          ... on DraftIssue { id title assignees(first:10) { nodes { login } } }
           ... on Issue {
-            number title url issueState: state repository { name }
+            id number title url issueState: state repository { name }
             assignees(first:10) { nodes { login } }
             closedByPullRequestsReferences(first:5, includeClosedPrs:true) { nodes { ...PR } }
           }
@@ -182,12 +193,12 @@ actor GitHubClient {
       }
     }
     fragment PR on PullRequest {
-      number title url state isDraft reviewDecision
+      id number title url state isDraft reviewDecision
       author { login }
       repository { name }
       assignees(first:10) { nodes { login } }
       reviewRequests(first:10) { nodes { requestedReviewer { ... on User { login } ... on Team { name } ... on Mannequin { login } } } }
-      latestReviews(first:10) { nodes { author { login } state } }
+      latestReviews(first:10) { nodes { author { login } state submittedAt } }
       commits(last:1) { nodes { commit { statusCheckRollup { state } } } }
     }
     """
@@ -221,12 +232,45 @@ actor GitHubClient {
                              projectURL: project.url,
                              statusOptions: project.statusField?.options ?? [],
                              mine: mine,
-                             open: open)
+                             open: open,
+                             viewerId: viewer.id,
+                             projectId: project.id,
+                             statusFieldId: project.statusField?.id)
     }
 
     private func request(_ vars: [String: Any]) async throws -> (DataNode.Viewer, ProjectNode) {
-        let body = try JSONSerialization.data(withJSONObject: ["query": Self.query, "variables": vars])
+        let data = try await post(Self.query, vars)
+        let decoded = try JSONDecoder().decode(GQLResponse.self, from: data)
+        if let d = decoded.data, let project = d.owner?.projectV2 { return (d.viewer, project) }
+        if let msg = decoded.errors?.map(\.message).joined(separator: "\n") { throw GHError.graphql(msg) }
+        throw GHError.projectNotFound
+    }
 
+    /// Sets a single-select field (the board's Status) on a project item.
+    func setStatus(projectId: String, itemId: String, fieldId: String, optionId: String) async throws {
+        try await mutate("""
+        mutation($p:ID!, $i:ID!, $f:ID!, $o:String!) {
+          updateProjectV2ItemFieldValue(input:{projectId:$p, itemId:$i, fieldId:$f, value:{singleSelectOptionId:$o}}) { clientMutationId }
+        }
+        """, ["p": projectId, "i": itemId, "f": fieldId, "o": optionId])
+    }
+
+    func removeAssignee(_ userId: String, from assignableId: String) async throws {
+        try await mutate("""
+        mutation($a:ID!, $u:ID!) { removeAssigneesFromAssignable(input:{assignableId:$a, assigneeIds:[$u]}) { clientMutationId } }
+        """, ["a": assignableId, "u": userId])
+    }
+
+    private func mutate(_ query: String, _ vars: [String: Any]) async throws {
+        struct Errors: Decodable { let errors: [GQLError]? }
+        let data = try await post(query, vars)
+        if let msg = try JSONDecoder().decode(Errors.self, from: data).errors?.map(\.message).joined(separator: "\n") {
+            throw GHError.graphql(msg)
+        }
+    }
+
+    private func post(_ query: String, _ vars: [String: Any]) async throws -> Data {
+        let body = try JSONSerialization.data(withJSONObject: ["query": query, "variables": vars])
         for attempt in 0..<2 {
             var req = URLRequest(url: URL(string: "https://api.github.com/graphql")!)
             req.httpMethod = "POST"
@@ -240,11 +284,7 @@ actor GitHubClient {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if code == 401 && attempt == 0 { token = nil; continue }
             guard code == 200 else { throw GHError.http(code, String(decoding: data, as: UTF8.self)) }
-
-            let decoded = try JSONDecoder().decode(GQLResponse.self, from: data)
-            if let d = decoded.data, let project = d.owner?.projectV2 { return (d.viewer, project) }
-            if let msg = decoded.errors?.map(\.message).joined(separator: "\n") { throw GHError.graphql(msg) }
-            throw GHError.projectNotFound
+            return data
         }
         throw GHError.noToken
     }

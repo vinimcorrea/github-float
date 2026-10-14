@@ -72,7 +72,7 @@ enum Screenshots {
             item("r-web147", repo: "web-app", n: 147, title: "Lazy-load the analytics dashboard charts", status: "In Review",
                  hours: 4, assignees: ["bob", "you"], pr: pr(148, author: "bob", reviews: [("you", "COMMENTED")], checks: "SUCCESS")),
             item("r-mob63", repo: "mobile", n: 63, title: "Retry failed uploads with exponential backoff", status: "In Review",
-                 hours: 9, assignees: ["erin", "you"], pr: pr(64, author: "erin", reviews: [("you", "CHANGES_REQUESTED")], decision: "CHANGES_REQUESTED", checks: "SUCCESS")),
+                 hours: 9, assignees: ["erin", "you"], pr: pr(64, author: "erin", requested: ["you"], reviews: [("you", "COMMENTED")], checks: "SUCCESS")),
         ]
         let open = [
             item("o-api320", repo: "api", n: 320, title: "Paginate the audit log export", status: "In Review",
