@@ -1,0 +1,16 @@
+.github/workflows/release.yml
+  h_4635714518fa69 25-51
+README.md
+  h_4635714518fa69 53-60,128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f235a546ba7ff661da096f9a03e50867ffc4866",
+  "prompts": {},
+  "humans": {
+    "h_4635714518fa69": {
+      "author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
