@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Original synthesized sounds (warm synth voices, chip-style melodies), one per kind of event. Rendered to WAV at build time (`--render-sounds`)
+/// Original synthesized sounds (soft mallets and electric-piano tones), one per kind of event. Rendered to WAV at build time (`--render-sounds`)
 /// so notifications can use them and respect Focus.
 enum SoundKind: String, CaseIterable {
     case attention, bad, good, info
@@ -17,53 +17,48 @@ enum SoundKind: String, CaseIterable {
         }
     }
 
-    /// The original score of each sound: playful chip-style melodies played on warm synth voices.
+    /// The score of each sound: soft mallet and electric-piano tones on consonant (major pentatonic) intervals.
     fileprivate var notes: [Note] {
         switch self {
         case .attention:
-            // A friendly "hey!": a quick pickup into a held fifth, over a soft sub.
-            return [Note(.d5, at: 0, for: 0.09, voice: .pluck, gain: 0.8),
-                    Note(.a5, at: 0.09, for: 0.42, voice: .pluck, vibrato: true),
-                    Note(.a5, at: 0.09, for: 0.42, voice: .bell, gain: 0.25),
-                    Note(.d3, at: 0, for: 0.5, voice: .sub, gain: 0.5)]
+            // A gentle, rising "ding-ding": a fifth then a sixth, like a friendly doorbell.
+            return [Note(.g5, at: 0, for: 0.5, voice: .kalimba, gain: 0.8),
+                    Note(.d6, at: 0.13, for: 0.6, voice: .kalimba, gain: 0.75),
+                    Note(.g4, at: 0, for: 0.7, voice: .keys, gain: 0.35),
+                    Note(.d5, at: 0.13, for: 0.7, voice: .keys, gain: 0.3)]
         case .good:
-            // Rising major-seventh run that lands on a glowing chord.
-            let run: [Double] = [.c5, .e5, .g5, .b5]
-            return run.enumerated().map { Note($1, at: Double($0) * 0.065, for: 0.12, voice: .pluck, gain: 0.75) }
-                + [Note(.d6, at: 0.26, for: 0.55, voice: .pluck, vibrato: true),
-                   Note(.g5, at: 0.26, for: 0.55, voice: .pluck, gain: 0.45),
-                   Note(.d6, at: 0.26, for: 0.55, voice: .bell, gain: 0.3),
-                   Note(.c3, at: 0.26, for: 0.6, voice: .sub, gain: 0.6)]
+            // A quick rolled major chord that blooms: C E G C.
+            let roll: [Double] = [.c5, .e5, .g5, .c6]
+            return roll.enumerated().flatMap { i, f in
+                [Note(f, at: Double(i) * 0.06, for: 0.9 - Double(i) * 0.06, voice: .keys, gain: 0.55),
+                 Note(f * 2, at: Double(i) * 0.06, for: 0.5, voice: .kalimba, gain: 0.35)]
+            } + [Note(.e6, at: 0.26, for: 0.7, voice: .kalimba, gain: 0.45)]
         case .bad:
-            // Two minor steps down and a tired pitch drop.
-            return [Note(.a4, at: 0, for: 0.16, voice: .pluck, gain: 0.85, bright: 0.6),
-                    Note(.f4, at: 0.17, for: 0.45, voice: .pluck, bright: 0.5, slideTo: .f4 * 0.94),
-                    Note(.a2, at: 0, for: 0.62, voice: .sub, gain: 0.7, slideTo: .a2 * 0.89)]
+            // Soft and low, never alarming: a falling fourth on warm keys.
+            return [Note(.a4, at: 0, for: 0.45, voice: .keys, gain: 0.8),
+                    Note(.e4, at: 0.16, for: 0.8, voice: .keys, gain: 0.8),
+                    Note(.a3, at: 0.16, for: 0.8, voice: .keys, gain: 0.35)]
         case .info:
-            // A soft "bloop" with an octave sparkle.
-            return [Note(.e5, at: 0, for: 0.16, voice: .pluck, gain: 0.8, bright: 0.7, slideFrom: .e5 * 0.94),
-                    Note(.e6, at: 0.02, for: 0.2, voice: .bell, gain: 0.22)]
+            // A single soft marimba drop.
+            return [Note(.e6, at: 0, for: 0.35, voice: .marimba, gain: 0.7),
+                    Note(.e5, at: 0, for: 0.45, voice: .keys, gain: 0.25)]
         }
     }
 }
 
-enum Voice { case pluck, bell, sub }
+enum Voice { case kalimba, marimba, keys }
 
 struct Note {
-    let freq: Double, start: Double, dur: Double, voice: Voice, gain: Double, bright: Double
-    let slideTo: Double?, slideFrom: Double?, vibrato: Bool
-    init(_ freq: Double, at start: Double, for dur: Double, voice: Voice, gain: Double = 1, bright: Double = 1,
-         slideTo: Double? = nil, slideFrom: Double? = nil, vibrato: Bool = false) {
-        (self.freq, self.start, self.dur, self.voice, self.gain, self.bright) = (freq, start, dur, voice, gain, bright)
-        (self.slideTo, self.slideFrom, self.vibrato) = (slideTo, slideFrom, vibrato)
+    let freq: Double, start: Double, dur: Double, voice: Voice, gain: Double
+    init(_ freq: Double, at start: Double, for dur: Double, voice: Voice, gain: Double = 1) {
+        (self.freq, self.start, self.dur, self.voice, self.gain) = (freq, start, dur, voice, gain)
     }
 }
 
 private extension Double {
-    static let a2 = 110.0, c3 = 130.81, d3 = 146.83
-    static let f4 = 349.23, a4 = 440.0
-    static let c5 = 523.25, d5 = 587.33, e5 = 659.25, g5 = 783.99, a5 = 880.0, b5 = 987.77
-    static let d6 = 1174.66, e6 = 1318.51
+    static let a3 = 220.0, e4 = 329.63, g4 = 392.0, a4 = 440.0
+    static let c5 = 523.25, d5 = 587.33, e5 = 659.25, g5 = 783.99
+    static let c6 = 1046.5, d6 = 1174.66, e6 = 1318.51
 }
 
 enum Sounds {
@@ -71,59 +66,42 @@ enum Sounds {
 
     static func samples(_ kind: SoundKind) -> [Float] {
         let sr = sampleRate
-        let length = (kind.notes.map { $0.start + $0.dur }.max() ?? 0) + 0.7
+        let length = (kind.notes.map { $0.start + $0.dur }.max() ?? 0) + 0.6
         var dry = [Double](repeating: 0, count: Int(length * sr))
 
         for note in kind.notes {
             let s0 = Int(note.start * sr)
-            let n = Int((note.dur + 0.15) * sr)
-            var phases = [0.0, 0.31, 0.67]
-            var low = 0.0, band = 0.0
+            let n = Int((note.dur + 0.1) * sr)
+            let f = note.freq
             for i in 0..<n where s0 + i < dry.count {
                 let t = Double(i) / sr
-                let p = min(1, t / note.dur)
-                var f = note.freq
-                if let to = note.slideTo { f *= pow(to / note.freq, p * p) }
-                if let from = note.slideFrom { f = from * pow(note.freq / from, min(1, t / 0.04)) }
-                if note.vibrato, t > 0.12 { f *= 1 + 0.006 * sin(2 * .pi * 5.5 * t) * min(1, (t - 0.12) / 0.15) }
-
-                // Soft attack, smooth exponential decay, gentle release past the note end.
-                let attack = min(1, t / (note.voice == .sub ? 0.015 : 0.006))
-                let decay = exp(-t / (note.dur * (note.voice == .bell ? 0.35 : 0.6)))
-                let release = t > note.dur ? exp(-(t - note.dur) / 0.04) : 1
-                let env = attack * decay * release
-
+                let release = t > note.dur ? exp(-(t - note.dur) / 0.03) : 1
                 var v = 0.0
                 switch note.voice {
-                case .pluck:
-                    // Two slightly detuned saws (chorus) through a low-pass filter that closes after the pluck.
-                    for (k, detune) in [0.996, 1.004].enumerated() {
-                        phases[k] = (phases[k] + f * detune / sr).truncatingRemainder(dividingBy: 1)
-                        v += 2 * phases[k] - 1
-                    }
-                    v *= 0.5
-                    let cutoff = min(5_500, f * (1.2 + 5 * note.bright * exp(-t / 0.07)))
-                    let fc = 2 * sin(.pi * cutoff / sr)
-                    low += fc * band
-                    let high = v - low - 0.9 * band
-                    band += fc * high
-                    v = low
-                case .bell:
-                    phases[0] = (phases[0] + f / sr).truncatingRemainder(dividingBy: 1)
-                    phases[1] = (phases[1] + f * 2.76 / sr).truncatingRemainder(dividingBy: 1)
-                    v = sin(2 * .pi * phases[0]) + 0.2 * sin(2 * .pi * phases[1]) * exp(-t / 0.05)
-                case .sub:
-                    phases[0] = (phases[0] + f / sr).truncatingRemainder(dividingBy: 1)
-                    v = sin(2 * .pi * phases[0])
+                case .kalimba:
+                    // Pure fundamental plus quickly fading upper partials: a soft, round "tine".
+                    let attack = min(1, t / 0.004)
+                    v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.45))
+                        + 0.18 * sin(2 * .pi * f * 5.4 * t) * exp(-t / 0.025)
+                        + 0.06 * sin(2 * .pi * f * 2 * t) * exp(-t / 0.12))
+                case .marimba:
+                    let attack = min(1, t / 0.003)
+                    v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.35))
+                        + 0.25 * sin(2 * .pi * f * 3.93 * t) * exp(-t / 0.03))
+                case .keys:
+                    // Rhodes-like FM: the bell-ish bite fades out, leaving a warm sine.
+                    let attack = min(1, t / 0.008)
+                    let index = 1.1 * exp(-t / 0.12) + 0.15
+                    v = attack * sin(2 * .pi * f * t + index * sin(2 * .pi * f * t)) * exp(-t / (note.dur * 0.55))
                 }
-                dry[s0 + i] += note.gain * env * v
+                dry[s0 + i] += note.gain * release * v
             }
         }
 
         // Space: a soft echo plus a small Schroeder reverb.
         var wet = dry
         let echo = Int(0.15 * sr)
-        for i in echo..<wet.count { wet[i] += 0.28 * wet[i - echo] }
+        for i in echo..<wet.count { wet[i] += 0.12 * wet[i - echo] }
         var verb = [Double](repeating: 0, count: wet.count)
         for ms in [29.7, 37.1, 41.1, 43.7] {
             let d = Int(ms / 1000 * sr)
@@ -137,18 +115,18 @@ enum Sounds {
             for i in d..<verb.count { out[i] = -g * verb[i] + verb[i - d] + g * out[i - d] }
             verb = out
         }
-        var mix = wet.indices.map { wet[$0] + 0.22 * verb[$0] }
+        var mix = wet.indices.map { wet[$0] + 0.18 * verb[$0] }
 
         // Warm it up: tame the top end and add gentle saturation.
         var y = 0.0
-        for i in mix.indices { y += 0.45 * (mix[i] - y); mix[i] = y }
+        for i in mix.indices { y += 0.6 * (mix[i] - y); mix[i] = y }
         let peak = mix.map(abs).max() ?? 1
-        mix = mix.map { tanh(1.4 * $0 / peak) / tanh(1.4) }
+        mix = mix.map { tanh(1.1 * $0 / peak) / tanh(1.1) }
 
         let fade = Int(0.08 * sr)
         return mix.enumerated().map { i, v in
             let f = i > mix.count - fade ? Double(mix.count - i) / Double(fade) : 1
-            return Float(v * 0.6 * f)
+            return Float(v * 0.5 * f)
         }
     }
 

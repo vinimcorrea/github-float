@@ -361,12 +361,13 @@ if CommandLine.arguments.contains("--notify-test") {
     let center = UNUserNotificationCenter.current()
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in
         print("granted=\(granted) error=\(error?.localizedDescription ?? "-")")
-        Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉", url: nil, id: "test"), sound: true) { err in
+        Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉", url: nil, id: "test", kind: .good), sound: true) { err in
             print("posted error=\(err?.localizedDescription ?? "-")")
             sema.signal()
         }
     }
     sema.wait()
+    RunLoop.main.run(until: Date().addingTimeInterval(2)) // let the sound finish
     exit(0)
 }
 

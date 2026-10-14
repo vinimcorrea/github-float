@@ -112,9 +112,12 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.title = e.title
         content.body = e.body
         if sound {
-            content.sound = Settings.shared.soundStyle == "synth" && Sounds.isBundled(e.kind)
-                ? UNNotificationSound(named: UNNotificationSoundName(e.kind.fileName))
-                : .default
+            if Settings.shared.soundStyle == "synth" {
+                // Played by the app itself: Notification Center may not play custom sounds for every app.
+                DispatchQueue.main.async { Sounds.play(e.kind) }
+            } else {
+                content.sound = .default
+            }
         }
         if let url = e.url { content.userInfo = ["url": url] }
         content.threadIdentifier = e.id
