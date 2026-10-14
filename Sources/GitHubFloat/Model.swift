@@ -236,7 +236,7 @@ final class Settings: ObservableObject {
     @Published var collapsed: Bool { didSet { d.set(collapsed, forKey: "collapsed") } }
     @Published var soundOnChange: Bool { didSet { d.set(soundOnChange, forKey: "soundOnChange") } }
     @Published var notifications: Bool { didSet { d.set(notifications, forKey: "notifications") } }
-    /// "synth", "meme" (bundled packs), "custom" (your own files) or "system" (the macOS default).
+    /// "synth" (GitHub Float's own sounds) or "system" (the macOS default).
     @Published var soundStyle: String { didSet { d.set(soundStyle, forKey: "soundStyle") } }
     /// Custom order of the "Mine" status sections (drag and drop); statuses not listed follow the board order.
     @Published var sectionOrder: [String] { didSet { d.set(sectionOrder, forKey: "sectionOrder") } }
@@ -515,7 +515,7 @@ final class Store: ObservableObject {
                     for (i, e) in ranked.enumerated() { Notifier.shared.post(e, sound: settings.soundOnChange && i == 0) }
                 } else if settings.soundOnChange {
                     let kind = SoundKind.allCases.first { k in events.contains { $0.kind == k } } ?? .info
-                    if settings.soundStyle == "system" { NSSound(named: "Glass")?.play() } else { Sounds.play(kind) }
+                    if settings.soundStyle == "synth" { Sounds.play(kind) } else { NSSound(named: "Glass")?.play() }
                 }
             }
         }
