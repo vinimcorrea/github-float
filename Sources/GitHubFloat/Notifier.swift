@@ -6,6 +6,7 @@ struct AttentionEvent {
     let body: String
     let url: String?
     let id: String
+    var kind: SoundKind = .info
 }
 
 /// Turns board diffs into the events worth interrupting you for.
@@ -19,7 +20,7 @@ enum AttentionDetector {
         for t in newOpen where oldOpen[t.id] == nil {
             out.append(.init(title: "Needs a reviewer · \(ref(t))",
                              body: "\(t.title)\nby \(t.assignees.first ?? "unassigned")",
-                             url: t.prs.first?.url ?? t.url, id: "open-\(t.id)"))
+                             url: t.prs.first?.url ?? t.url, id: "open-\(t.id)", kind: .attention))
         }
 
         for t in newReviewing {
@@ -29,16 +30,18 @@ enum AttentionDetector {
                 let author = t.prs.compactMap(\.author).first ?? t.assignees.first ?? "The author"
                 out.append(.init(title: "Re-review requested · \(ref(t))",
                                  body: "\(t.title)\n\(author) asked for your review again",
-                                 url: t.prs.first?.url ?? t.url, id: "reviewing-\(t.id)"))
+                                 url: t.prs.first?.url ?? t.url, id: "reviewing-\(t.id)", kind: .attention))
             }
         }
 
         for t in newMine {
             guard let old = oldMine[t.id] else { continue }
             var lines: [String] = []
+            var good = false, bad = false
 
             if old.status != t.status, notifyStatuses.contains(t.status) {
                 lines.append("Moved to \(t.status)")
+                good = true
             }
             let newcomers = t.assignees.filter { !old.assignees.contains($0) && $0 != viewer }
             if !newcomers.isEmpty {
@@ -50,18 +53,23 @@ enum AttentionDetector {
                 let prevReviews = Dictionary(before.reviewers.map { ($0.login, $0.state) }, uniquingKeysWith: { a, _ in a })
                 for r in pr.reviewers where r.state != "REQUESTED" && prevReviews[r.login] != r.state {
                     lines.append("PR #\(pr.number): \(r.login) \(verb(r.state))")
+                    if r.state == "APPROVED" { good = true }
+                    if r.state == "CHANGES_REQUESTED" { bad = true }
                 }
                 if pr.stage != before.stage, pr.stage == .merged {
                     lines.append("PR #\(pr.number) merged")
+                    good = true
                 }
                 if pr.checks != before.checks, pr.checks == .failure || pr.checks == .error {
                     lines.append("PR #\(pr.number): checks failing")
+                    bad = true
                 }
             }
             if !lines.isEmpty {
                 out.append(.init(title: "\(ref(t)) · \(t.title)",
                                  body: lines.joined(separator: "\n"),
-                                 url: t.prs.first?.url ?? t.url, id: "mine-\(t.id)"))
+                                 url: t.prs.first?.url ?? t.url, id: "mine-\(t.id)",
+                                 kind: bad ? .bad : good ? .good : .info))
             }
         }
         return out
@@ -103,7 +111,11 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = e.title
         content.body = e.body
-        if sound { content.sound = .default }
+        if sound {
+            content.sound = Settings.shared.soundStyle == "synth" && Sounds.isBundled(e.kind)
+                ? UNNotificationSound(named: UNNotificationSoundName(e.kind.fileName))
+                : .default
+        }
         if let url = e.url { content.userInfo = ["url": url] }
         content.threadIdentifier = e.id
         if let attachment = iconAttachment() { content.attachments = [attachment] }

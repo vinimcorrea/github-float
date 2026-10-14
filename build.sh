@@ -24,6 +24,7 @@ fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/GitHubFloat"
+"$BIN" --render-sounds "$APP/Contents/Resources"
 
 # App icon: render the PNG (if missing) and convert it into an .icns.
 [ -f Icon/AppIcon.png ] || swift Icon/make_icon.swift Icon/AppIcon.png

@@ -236,6 +236,8 @@ final class Settings: ObservableObject {
     @Published var collapsed: Bool { didSet { d.set(collapsed, forKey: "collapsed") } }
     @Published var soundOnChange: Bool { didSet { d.set(soundOnChange, forKey: "soundOnChange") } }
     @Published var notifications: Bool { didSet { d.set(notifications, forKey: "notifications") } }
+    /// "synth" (GitHub Float's own sounds) or "system" (the macOS default).
+    @Published var soundStyle: String { didSet { d.set(soundStyle, forKey: "soundStyle") } }
     /// Custom order of the "Mine" status sections (drag and drop); statuses not listed follow the board order.
     @Published var sectionOrder: [String] { didSet { d.set(sectionOrder, forKey: "sectionOrder") } }
     /// Folded sections, keyed by "<tab>:<title>".
@@ -253,6 +255,7 @@ final class Settings: ObservableObject {
             "collapsed": false,
             "soundOnChange": true,
             "notifications": true,
+            "soundStyle": "synth",
         ])
         owner = d.string(forKey: "owner") ?? ""
         projectNumber = d.integer(forKey: "projectNumber")
@@ -264,6 +267,7 @@ final class Settings: ObservableObject {
         collapsed = d.bool(forKey: "collapsed")
         soundOnChange = d.bool(forKey: "soundOnChange")
         notifications = d.bool(forKey: "notifications")
+        soundStyle = d.string(forKey: "soundStyle") ?? "synth"
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
     }
@@ -506,9 +510,12 @@ final class Store: ObservableObject {
                                                       oldOpen: previousOpen, newOpen: newOpen,
                                                       viewer: snap.viewer, notifyStatuses: notifyStatuses)
                 if settings.notifications {
-                    events.forEach { Notifier.shared.post($0, sound: settings.soundOnChange) }
+                    // Most important event first, and only one sound per poll.
+                    let ranked = events.sorted { SoundKind.allCases.firstIndex(of: $0.kind)! < SoundKind.allCases.firstIndex(of: $1.kind)! }
+                    for (i, e) in ranked.enumerated() { Notifier.shared.post(e, sound: settings.soundOnChange && i == 0) }
                 } else if settings.soundOnChange {
-                    NSSound(named: "Glass")?.play()
+                    let kind = SoundKind.allCases.first { k in events.contains { $0.kind == k } } ?? .info
+                    if settings.soundStyle == "synth" { Sounds.play(kind) } else { NSSound(named: "Glass")?.play() }
                 }
             }
         }

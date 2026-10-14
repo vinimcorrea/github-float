@@ -223,9 +223,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(notify)
         menu.addItem(item("Send Test Notification", #selector(testNotification), key: ""))
 
-        let sound = item("Sound on Changes", #selector(toggleSound), key: "")
-        sound.state = settings.soundOnChange ? .on : .off
-        menu.addItem(sound)
+        let soundMenu = NSMenu()
+        for (title, style) in [("GitHub Float Synth", "synth"), ("macOS Default", "system"), ("Off", "off")] {
+            let i = item(title, #selector(setSoundStyle(_:)), key: "", represented: style)
+            i.state = (style == "off" ? !settings.soundOnChange : settings.soundOnChange && settings.soundStyle == style) ? .on : .off
+            soundMenu.addItem(i)
+        }
+        soundMenu.addItem(.separator())
+        let previewHeader = NSMenuItem(title: "Preview", action: nil, keyEquivalent: "")
+        previewHeader.isEnabled = false
+        soundMenu.addItem(previewHeader)
+        for k in SoundKind.allCases {
+            soundMenu.addItem(item("▶︎ \(k.title)", #selector(previewSound(_:)), key: "", represented: k.rawValue))
+        }
+        menu.addItem(submenu("Sound", soundMenu))
 
         let login = item("Launch at Login", #selector(toggleLogin), key: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -299,13 +310,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if let v = sender.representedObject as? Double { settings.opacity = v }
     }
 
-    @objc private func toggleSound() { settings.soundOnChange.toggle() }
+    @objc private func setSoundStyle(_ sender: NSMenuItem) {
+        guard let style = sender.representedObject as? String else { return }
+        settings.soundOnChange = style != "off"
+        if style != "off" { settings.soundStyle = style }
+    }
+
+    @objc private func previewSound(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let kind = SoundKind(rawValue: raw) else { return }
+        Sounds.play(kind)
+    }
 
     @objc private func toggleNotifications() { settings.notifications.toggle() }
 
     @objc private func testNotification() {
         Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉",
-                                   url: store.projectURL, id: "test"), sound: settings.soundOnChange) { error in
+                                   url: store.projectURL, id: "test", kind: .attention), sound: settings.soundOnChange) { error in
             guard let error else { return }
             DispatchQueue.main.async {
                 let alert = NSAlert()
@@ -327,6 +347,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func quit() { NSApp.terminate(nil) }
+}
+
+// `GitHubFloat --render-sounds <dir>` writes the notification sounds (used by build.sh).
+if let i = CommandLine.arguments.firstIndex(of: "--render-sounds") {
+    Sounds.render(to: CommandLine.arguments.count > i + 1 ? CommandLine.arguments[i + 1] : ".")
+    exit(0)
 }
 
 // `GitHubFloat --notify-test` posts a sample notification and reports the authorization state.
