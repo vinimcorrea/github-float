@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// Original synthesized UI sounds, one per kind of event. Rendered to WAV at build time (`--render-sounds`)
+/// Original 8-bit (chiptune) sounds, one per kind of event. Rendered to WAV at build time (`--render-sounds`)
 /// so notifications can use them and respect Focus.
 enum SoundKind: String, CaseIterable {
     case attention, bad, good, info
@@ -17,65 +17,90 @@ enum SoundKind: String, CaseIterable {
         }
     }
 
-    /// Notes as (frequency Hz, start s, duration s, gain).
-    fileprivate var notes: [(Double, Double, Double, Double)] {
+    /// The original 8-bit "score" of each sound.
+    fileprivate var notes: [Note] {
         switch self {
-        case .attention: return [(659.25, 0, 0.11, 0.8), (987.77, 0.09, 0.30, 0.9)]
-        case .good: return [(523.25, 0, 0.12, 0.6), (659.25, 0.07, 0.12, 0.65), (783.99, 0.14, 0.14, 0.7), (1046.5, 0.21, 0.45, 0.75)]
-        case .bad: return [(392.0, 0, 0.16, 0.85), (293.66, 0.13, 0.40, 0.9)]
-        case .info: return [(1760.0, 0, 0.22, 0.45)]
+        case .attention:
+            // Two bright blips and a held top note: "hey, over here!"
+            return [Note(.e6, at: 0, for: 0.055, wave: .pulse25),
+                    Note(.e6, at: 0.075, for: 0.055, wave: .pulse25),
+                    Note(.a6, at: 0.15, for: 0.26, wave: .pulse25, vibrato: true)]
+        case .good:
+            // Fast rising arpeggio that lands on a shimmering high note.
+            let run: [Double] = [.c5, .e5, .g5, .c6, .e6, .g6]
+            return run.enumerated().map { Note($1, at: Double($0) * 0.045, for: 0.05, wave: .pulse12) }
+                + [Note(.c7, at: 0.27, for: 0.32, wave: .pulse12, gain: 0.8, vibrato: true),
+                   Note(.c5, at: 0.27, for: 0.32, wave: .triangle, gain: 0.9)]
+        case .bad:
+            // A falling "wah-wah": two low notes and a sliding drop.
+            return [Note(.g4, at: 0, for: 0.12, wave: .pulse50),
+                    Note(.d4s, at: 0.14, for: 0.12, wave: .pulse50),
+                    Note(.c4, at: 0.28, for: 0.34, wave: .pulse50, slideTo: 196.0 * 0.75, vibrato: true),
+                    Note(.c3, at: 0.28, for: 0.34, wave: .triangle, gain: 0.9)]
+        case .info:
+            // A tiny upward "bloop".
+            return [Note(880, at: 0, for: 0.07, wave: .pulse25, slideTo: 1568),
+                    Note(.g6, at: 0.08, for: 0.06, wave: .pulse25, gain: 0.6)]
         }
     }
+}
 
-    /// Metallic FM shimmer amount and its ratio.
-    fileprivate var fm: (index: Double, ratio: Double) {
-        switch self {
-        case .attention: return (1.2, 2.0)
-        case .good: return (0.8, 3.0)
-        case .bad: return (2.2, 1.5)
-        case .info: return (0.6, 3.5)
-        }
+enum Wave { case pulse12, pulse25, pulse50, triangle }
+
+struct Note {
+    let freq: Double, start: Double, dur: Double, wave: Wave, gain: Double, slideTo: Double?, vibrato: Bool
+    init(_ freq: Double, at start: Double, for dur: Double, wave: Wave, gain: Double = 1, slideTo: Double? = nil, vibrato: Bool = false) {
+        (self.freq, self.start, self.dur, self.wave, self.gain, self.slideTo, self.vibrato) = (freq, start, dur, wave, gain, slideTo, vibrato)
     }
+}
+
+private extension Double {
+    static let c3 = 130.81, c4 = 261.63, d4s = 311.13, g4 = 392.0
+    static let c5 = 523.25, e5 = 659.25, g5 = 783.99
+    static let c6 = 1046.5, e6 = 1318.51, g6 = 1567.98, a6 = 1760.0, c7 = 2093.0
 }
 
 enum Sounds {
     static let sampleRate = 44_100.0
 
     static func samples(_ kind: SoundKind) -> [Float] {
-        let tail = 0.45
-        let length = (kind.notes.map { $0.1 + $0.2 }.max() ?? 0) + tail
+        let length = (kind.notes.map { $0.start + $0.dur }.max() ?? 0) + 0.03
         var out = [Double](repeating: 0, count: Int(length * sampleRate))
-        let (index, ratio) = kind.fm
 
-        for (freq, start, dur, gain) in kind.notes {
-            let s0 = Int(start * sampleRate)
-            let n = Int((dur + 0.25) * sampleRate)
+        for note in kind.notes {
+            let s0 = Int(note.start * sampleRate)
+            let n = Int(note.dur * sampleRate)
+            var phase = 0.0
             for i in 0..<n where s0 + i < out.count {
                 let t = Double(i) / sampleRate
-                let attack = min(1, t / 0.004)
-                let env = attack * exp(-t / (dur * 0.45))
-                let modEnv = exp(-t / 0.06)
-                let mod = index * modEnv * sin(2 * .pi * freq * ratio * t)
-                let tone = sin(2 * .pi * freq * t + mod) + 0.25 * sin(2 * .pi * freq * 2.001 * t) * exp(-t / 0.05)
-                out[s0 + i] += gain * env * tone
+                let progress = Double(i) / Double(n)
+                var f = note.slideTo.map { note.freq * pow($0 / note.freq, progress) } ?? note.freq
+                if note.vibrato, t > 0.06 { f *= 1 + 0.012 * sin(2 * .pi * 9 * t) }
+                phase = (phase + f / sampleRate).truncatingRemainder(dividingBy: 1)
+                let v: Double
+                switch note.wave {
+                case .pulse12: v = phase < 0.125 ? 1 : -1
+                case .pulse25: v = phase < 0.25 ? 1 : -1
+                case .pulse50: v = phase < 0.5 ? 1 : -1
+                case .triangle: v = 4 * abs(phase - 0.5) - 1
+                }
+                // NES-style stepped volume: quick attack, short sustain, linear release in 16 steps.
+                let release = max(0, (progress - 0.55) / 0.45)
+                let env = min(1, t / 0.003) * (1 - (release * 15).rounded(.down) / 16)
+                let level = note.wave == .triangle ? 0.55 : 0.32
+                out[s0 + i] += level * note.gain * env * v
             }
         }
 
-        // Ping-pong-ish echo for a spacious, "sci-fi console" tail.
-        let delay = Int(0.11 * sampleRate)
-        for i in delay..<out.count { out[i] += 0.32 * out[i - delay] }
-
-        // Gentle one-pole low-pass to take the edge off.
+        // Light smoothing so square edges don't sound harsh on laptop speakers.
         var y = 0.0
-        let a = 0.5
-        for i in out.indices { y += a * (out[i] - y); out[i] = y }
+        for i in out.indices { y += 0.6 * (out[i] - y); out[i] = y }
 
-        // Normalize and fade out.
         let peak = out.map(abs).max() ?? 1
-        let fade = Int(0.05 * sampleRate)
+        let fade = Int(0.01 * sampleRate)
         return out.enumerated().map { i, v in
             let f = i > out.count - fade ? Double(out.count - i) / Double(fade) : 1
-            return Float(v / peak * 0.7 * f)
+            return Float(v / peak * 0.6 * f)
         }
     }
 
