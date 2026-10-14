@@ -102,9 +102,9 @@ struct PullRequest: Identifiable, Hashable {
     let repo: String
     let title: String
     let url: String
-    let stage: ReviewStage
+    private(set) var stage: ReviewStage
     let author: String?
-    let reviewers: [ReviewerState]
+    private(set) var reviewers: [ReviewerState]
     let checks: CheckState?
 
     static func isBot(_ login: String) -> Bool {
@@ -156,6 +156,18 @@ fileprivate let isoPlain = ISO8601DateFormatter()
 
 func parseISODate(_ s: String) -> Date? { isoFractional.date(from: s) ?? isoPlain.date(from: s) }
 
+extension PullRequest {
+    /// Team convention: the task's other assignees are its reviewers, even when the PR has no review request.
+    func withAssignedReviewers(_ assignees: [String]) -> PullRequest {
+        let extra = assignees.filter { $0 != author && !reviewers.map(\.login).contains($0) }
+        guard !extra.isEmpty else { return self }
+        var pr = self
+        pr.reviewers += extra.map { ReviewerState(login: $0, state: "REQUESTED") }
+        if pr.stage == .noReviewers { pr.stage = .awaitingReview }
+        return pr
+    }
+}
+
 struct BoardTask: Identifiable, Hashable {
     let id: String
     /// Node id of the issue / pull request / draft behind the card.
@@ -180,14 +192,15 @@ struct BoardTask: Identifiable, Hashable {
         number = c.number
         title = c.title ?? "(untitled)"
         url = c.url
-        assignees = c.assignees.filter { !PullRequest.isBot($0) }
+        let people = c.assignees.filter { !PullRequest.isBot($0) }
+        assignees = people
         statusSince = item.status?.updatedAt.flatMap(parseISODate)
         if let pr = c.pr {
-            prs = [PullRequest(pr)]
+            prs = [PullRequest(pr).withAssignedReviewers(people)]
         } else {
             let all = c.closingPRs.map(PullRequest.init)
             let live = all.filter { $0.stage != .closed }
-            prs = live.isEmpty ? all : live
+            prs = (live.isEmpty ? all : live).map { $0.withAssignedReviewers(people) }
         }
     }
 

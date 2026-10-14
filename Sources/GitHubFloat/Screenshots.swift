@@ -76,11 +76,11 @@ enum Screenshots {
         ]
         let open = [
             item("o-api320", repo: "api", n: 320, title: "Paginate the audit log export", status: "In Review",
-                 hours: 80, assignees: ["carol"], pr: pr(322, checks: "SUCCESS")),
+                 hours: 80, assignees: ["carol"], pr: pr(322, author: "carol", checks: "SUCCESS")),
             item("o-web151", repo: "web-app", n: 151, title: "Fix the flaky checkout end-to-end test", status: "In Review",
-                 hours: 26, assignees: ["dave"], pr: pr(152, requested: ["team-web"], checks: "SUCCESS")),
+                 hours: 26, assignees: ["dave"], pr: pr(152, author: "dave", requested: ["team-web"], checks: "SUCCESS")),
             item("o-docs12", repo: "docs", n: 12, title: "Document webhook retry behaviour", status: "In Review",
-                 hours: 2, assignees: ["erin"], pr: pr(13, checks: "PENDING")),
+                 hours: 2, assignees: ["erin"], pr: pr(13, author: "erin", checks: "PENDING")),
         ]
         let options = [("Backlog", "GRAY"), ("In Progress", "YELLOW"), ("In Review", "ORANGE"), ("Reviewed", "PURPLE"), ("Done", "GREEN")]
             .map { StatusOption(name: $0.0, color: $0.1) }
