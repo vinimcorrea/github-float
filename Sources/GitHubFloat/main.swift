@@ -44,9 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         settings.$opacity.sink { [weak self] in self?.panel.alphaValue = $0 }.store(in: &bag)
         settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
-        store.$mine.combineLatest(store.$open, store.$changed, store.$error)
-            .sink { [weak self] mine, open, changed, error in
-                self?.updateStatusItem(mine: mine.count, open: open.count, changed: changed.count, error: error != nil)
+        Publishers.CombineLatest4(store.$mine, store.$reviewing, store.$open, store.$changed.combineLatest(store.$error))
+            .sink { [weak self] mine, reviewing, open, rest in
+                self?.updateStatusItem(mine: mine.count, reviewing: reviewing.count, open: open.count,
+                                       changed: rest.0.count, error: rest.1 != nil)
             }
             .store(in: &bag)
 
@@ -158,9 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         statusItem.menu = menu
     }
 
-    private func updateStatusItem(mine: Int, open: Int, changed: Int, error: Bool) {
-        statusItem.button?.title = error ? " !" : " \(mine) · \(open)" + (changed > 0 ? " •" : "")
-        statusItem.button?.toolTip = "Mine: \(mine) · Needs reviewer: \(open)"
+    private func updateStatusItem(mine: Int, reviewing: Int, open: Int, changed: Int, error: Bool) {
+        statusItem.button?.title = error ? " !" : " \(mine) · \(reviewing) · \(open)" + (changed > 0 ? " •" : "")
+        statusItem.button?.toolTip = "Mine: \(mine) · Reviewing: \(reviewing) · Needs reviewer: \(open)"
     }
 
     private func popUpMenu() {
@@ -372,7 +373,9 @@ if CommandLine.arguments.contains("--dump") {
                     }
                 }
             }
-            dump("Mine: \(s.mineFilter)", snap.mine.compactMap(BoardTask.init))
+            let assigned = snap.mine.compactMap(BoardTask.init)
+            dump("Mine: \(s.mineFilter)", assigned.filter { !$0.isReviewing(by: snap.viewer) })
+            dump("Reviewing", assigned.filter { $0.isReviewing(by: snap.viewer) })
             dump("Needs reviewer: \(s.openFilter) + <2 assignees", snap.open.compactMap(BoardTask.init).filter { $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) })
         } catch {
             print("ERROR: \(error.localizedDescription)")

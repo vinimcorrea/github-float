@@ -35,18 +35,21 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 
 - 🪟 **Always on top**: a non-activating floating panel that never steals focus, visible on all Spaces and over full-screen apps.
 - 👤 **Mine**: your tasks grouped by status (In Progress, In Review, Reviewed), each with its linked PRs.
+- 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.
 - 🔍 **Review state at a glance**: *awaiting review*, *being reviewed*, *changes requested*, *approved*, *merged*, plus the reviewers and CI status (✅ ❌ ⏳).
 - 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, so you can pick one up in one click.
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.
 - 🔔 **Native notifications** when something needs you: a new review, changes requested, approval, failing CI, merged PR, a task moved forward, or a new task waiting for a reviewer.
-- ⚡ **Efficient**: one GraphQL request per poll for both tabs. Polling pauses while your Mac sleeps or is locked and backs off on errors.
+- ⚡ **Efficient**: one GraphQL request per poll for all tabs. Polling pauses while your Mac sleeps or is locked and backs off on errors.
 - 🧩 **Compact mode**: collapse to a single line with your counts.
 - 🔐 **Private**: no server and no telemetry. It only talks to `api.github.com` with your own token.
 - 🪶 **Native and tiny**: Swift + SwiftUI, a few MB, no Electron.
 
-| Mine | Needs reviewer | Collapsed |
+| Mine | Reviewing | Needs reviewer |
 |---|---|---|
-| <img src="docs/mine.png" width="300"> | <img src="docs/needs-reviewer.png" width="300"> | <img src="docs/collapsed.png" width="300"> |
+| <img src="docs/mine.png" width="260"> | <img src="docs/reviewing.png" width="260"> | <img src="docs/needs-reviewer.png" width="260"> |
+
+<p align="center"><img src="docs/collapsed.png" width="300" alt="Collapsed"></p>
 
 ## 📦 Install
 
@@ -97,7 +100,8 @@ Your project needs a single-select **Status** field (the default in GitHub Proje
 
 | Tab | Shows |
 |---|---|
-| **Mine** | Items assigned to you whose Status is one of the selected statuses (default: *In Progress*, *In Review*, *Reviewed*). |
+| **Mine** | Items assigned to you whose Status is one of the selected statuses (default: *In Progress*, *In Review*, *Reviewed*), excluding the ones you are reviewing. |
+| **Reviewing** | Items assigned to you where someone else authored the linked PR (or, without a PR, is the first assignee), while the PR is still open. *Your turn* means you have not reviewed yet or a re-review was requested. |
 | **Needs reviewer** | Open items in the review status (default: *In Review*) **not** assigned to you that have fewer than 2 assignees. The convention: the author is the first assignee, and a reviewer adds themselves as the second one. |
 
 Review stage of each linked PR: merged/closed → draft → approved / changes requested → being reviewed (a review was submitted) → awaiting review (reviewers requested) → no reviewers. Bot reviews and the author's own comments are ignored.
@@ -106,7 +110,7 @@ Review stage of each linked PR: merged/closed → draft → approved / changes r
 
 | Keys | Action |
 |---|---|
-| ⌘1 / ⌘2 | Switch between *Mine* and *Needs reviewer* |
+| ⌘1 / ⌘2 / ⌘3 | Switch between *Mine*, *Reviewing* and *Needs reviewer* |
 | ⌘R | Refresh now |
 | ⌘, | Connect a project |
 | Click a row | Open the issue or PR in your browser |

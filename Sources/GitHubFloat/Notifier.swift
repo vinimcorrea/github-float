@@ -11,6 +11,7 @@ struct AttentionEvent {
 /// Turns board diffs into the events worth interrupting you for.
 enum AttentionDetector {
     static func events(oldMine: [String: BoardTask], newMine: [BoardTask],
+                       oldReviewing: [String: BoardTask] = [:], newReviewing: [BoardTask] = [],
                        oldOpen: [String: BoardTask], newOpen: [BoardTask],
                        viewer: String, notifyStatuses: Set<String>) -> [AttentionEvent] {
         var out: [AttentionEvent] = []
@@ -19,6 +20,17 @@ enum AttentionDetector {
             out.append(.init(title: "Needs a reviewer · \(ref(t))",
                              body: "\(t.title)\nby \(t.assignees.first ?? "unassigned")",
                              url: t.prs.first?.url ?? t.url, id: "open-\(t.id)"))
+        }
+
+        for t in newReviewing {
+            guard let old = oldReviewing[t.id] else { continue }
+            let before = old.reviewState(of: viewer), now = t.reviewState(of: viewer)
+            if now == "REQUESTED", before != nil, before != "REQUESTED" {
+                let author = t.prs.compactMap(\.author).first ?? t.assignees.first ?? "The author"
+                out.append(.init(title: "Re-review requested · \(ref(t))",
+                                 body: "\(t.title)\n\(author) asked for your review again",
+                                 url: t.prs.first?.url ?? t.url, id: "reviewing-\(t.id)"))
+            }
         }
 
         for t in newMine {

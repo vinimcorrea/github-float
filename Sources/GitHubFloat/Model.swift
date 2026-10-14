@@ -102,6 +102,7 @@ struct PullRequest: Identifiable, Hashable {
     let title: String
     let url: String
     let stage: ReviewStage
+    let author: String?
     let reviewers: [ReviewerState]
     let checks: CheckState?
 
@@ -114,6 +115,7 @@ struct PullRequest: Identifiable, Hashable {
         repo = n.repository.name
         title = n.title
         url = n.url
+        author = n.author?.login
         checks = n.state != "OPEN" ? nil : n.commits?.nodes?.compactMap { $0 }.last?.commit.statusCheckRollup.flatMap { CheckState(rawValue: $0.state) }
 
         var byLogin: [String: String] = [:]
@@ -184,6 +186,26 @@ struct BoardTask: Identifiable, Hashable {
     /// The most urgent stage across linked PRs, used for sorting.
     var stage: ReviewStage? { prs.map(\.stage).min() }
 
+    /// Assigned to you, but someone else's work: you're the reviewer.
+    /// Decided by the linked PRs' author, falling back to the first assignee.
+    func isReviewing(by viewer: String) -> Bool {
+        guard assignees.contains(viewer) else { return false }
+        let authors = prs.compactMap(\.author)
+        if !authors.isEmpty { return !authors.contains(viewer) }
+        return assignees.first != viewer
+    }
+
+    /// Your own review on the linked PRs (nil when you haven't been requested or reviewed yet).
+    func reviewState(of viewer: String) -> String? {
+        prs.lazy.compactMap { $0.reviewers.first { $0.login == viewer }?.state }.first
+    }
+
+    /// Whether the ball is in your court: no review from you yet, or your review was re-requested.
+    func awaitsReview(from viewer: String) -> Bool {
+        let state = reviewState(of: viewer)
+        return state == nil || state == "REQUESTED"
+    }
+
     var signature: String {
         status + "|" + assignees.joined(separator: ",") + "|" + prs.map { "\($0.number):\($0.stage.rawValue):\($0.checks?.rawValue ?? "")" + $0.reviewers.map { $0.login + $0.state }.joined() }.joined(separator: ",")
     }
@@ -192,7 +214,7 @@ struct BoardTask: Identifiable, Hashable {
 // MARK: - Settings
 
 enum Tab: String, CaseIterable {
-    case mine, open
+    case mine, reviewing, open
 }
 
 final class Settings: ObservableObject {
@@ -257,7 +279,11 @@ final class Settings: ObservableObject {
         names.isEmpty ? "" : "status:" + names.map { "\"\($0)\"" }.joined(separator: ",")
     }
 
-    var mineFilter: String { ("assignee:@me " + Self.statusFilter(statuses)).trimmingCharacters(in: .whitespaces) }
+    /// Everything assigned to you; split client-side into "Mine" and "Reviewing".
+    var mineFilter: String {
+        let names = statuses.isEmpty ? [] : statuses + (statuses.contains(reviewStatus) ? [] : [reviewStatus])
+        return ("assignee:@me " + Self.statusFilter(names)).trimmingCharacters(in: .whitespaces)
+    }
     var openFilter: String { "is:open -assignee:@me " + Self.statusFilter([reviewStatus]) }
 }
 
@@ -266,6 +292,7 @@ final class Settings: ObservableObject {
 @MainActor
 final class Store: ObservableObject {
     @Published private(set) var mine: [BoardTask] = []
+    @Published private(set) var reviewing: [BoardTask] = []
     @Published private(set) var open: [BoardTask] = []
     @Published private(set) var viewer = ""
     @Published private(set) var statusOptions: [StatusOption] = []
@@ -280,6 +307,7 @@ final class Store: ObservableObject {
     private let client = GitHubClient()
     private var signatures: [String: String]?
     private var previousMine: [String: BoardTask] = [:]
+    private var previousReviewing: [String: BoardTask] = [:]
     private var previousOpen: [String: BoardTask] = [:]
     private var loop: Task<Void, Never>?
     private var failures = 0
@@ -298,6 +326,7 @@ final class Store: ObservableObject {
         .sink { [weak self] in
             self?.signatures = nil
             self?.previousMine = [:]
+            self?.previousReviewing = [:]
             self?.previousOpen = [:]
             self?.start()
         }
@@ -386,8 +415,16 @@ final class Store: ObservableObject {
         }
     }
 
+    func tasks(_ tab: Tab) -> [BoardTask] {
+        switch tab {
+        case .mine: return mine
+        case .reviewing: return reviewing
+        case .open: return open
+        }
+    }
+
     func changedCount(_ tab: Tab) -> Int {
-        (tab == .mine ? mine : open).filter { changed.contains(key(tab, $0)) }.count
+        tasks(tab).filter { changed.contains(key(tab, $0)) }.count
     }
 
     func key(_ tab: Tab, _ task: BoardTask) -> String { "\(tab.rawValue):\(task.id)" }
@@ -418,7 +455,16 @@ final class Store: ObservableObject {
         if statusOptions != snap.statusOptions { statusOptions = snap.statusOptions }
         lastUpdated = Date()
 
-        let newMine = snap.mine.compactMap(BoardTask.init)
+        let assigned = snap.mine.compactMap(BoardTask.init)
+        let newMine = assigned.filter { !$0.isReviewing(by: snap.viewer) && (settings.statuses.isEmpty || settings.statuses.contains($0.status)) }
+        // Reviewing = others' work assigned to you, until its PRs are merged or closed.
+        let newReviewing = assigned
+            .filter { $0.isReviewing(by: snap.viewer) && ($0.prs.isEmpty || $0.prs.contains { $0.stage != .merged && $0.stage != .closed }) }
+            .sorted {
+                let a = $0.awaitsReview(from: snap.viewer), b = $1.awaitsReview(from: snap.viewer)
+                if a != b { return a }
+                return ($0.statusSince ?? .distantFuture) < ($1.statusSince ?? .distantFuture)
+            }
         // Open for review = in the review status with no second (reviewer) assignee.
         let newOpen = snap.open.compactMap(BoardTask.init)
             .filter { $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) }
@@ -426,6 +472,7 @@ final class Store: ObservableObject {
 
         var newSigs: [String: String] = [:]
         for t in newMine { newSigs[key(.mine, t)] = t.signature }
+        for t in newReviewing { newSigs[key(.reviewing, t)] = t.signature }
         for t in newOpen { newSigs[key(.open, t)] = t.signature }
         guard newSigs != signatures else { return }
 
@@ -434,6 +481,7 @@ final class Store: ObservableObject {
             if !diff.isEmpty {
                 changed.formUnion(diff)
                 let events = AttentionDetector.events(oldMine: previousMine, newMine: newMine,
+                                                      oldReviewing: previousReviewing, newReviewing: newReviewing,
                                                       oldOpen: previousOpen, newOpen: newOpen,
                                                       viewer: snap.viewer, notifyStatuses: notifyStatuses)
                 if settings.notifications {
@@ -444,10 +492,12 @@ final class Store: ObservableObject {
             }
         }
         previousMine = Dictionary(newMine.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        previousReviewing = Dictionary(newReviewing.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         previousOpen = Dictionary(newOpen.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         changed.formIntersection(newSigs.keys)
         signatures = newSigs
         mine = newMine
+        reviewing = newReviewing
         open = newOpen
     }
 }

@@ -20,6 +20,8 @@ enum Screenshots {
 
         settings.tab = .mine
         save(panel(store, settings, height: 560), url.appendingPathComponent("mine.png"))
+        settings.tab = .reviewing
+        save(panel(store, settings, height: 440), url.appendingPathComponent("reviewing.png"))
         settings.tab = .open
         save(panel(store, settings, height: 360), url.appendingPathComponent("needs-reviewer.png"))
         settings.collapsed = true
@@ -63,6 +65,12 @@ enum Screenshots {
                  hours: 1, assignees: ["you", "alice"], pr: pr(80, reviews: [("alice", "COMMENTED")], checks: "SUCCESS")),
             item("i-mob59", repo: "mobile", n: 59, title: "Offline cache for the activity feed", status: "Reviewed",
                  hours: 2, assignees: ["you", "dave"], pr: pr(61, reviews: [("bob", "APPROVED"), ("dave", "APPROVED")], decision: "APPROVED", checks: "SUCCESS")),
+            item("r-api305", repo: "api", n: 305, title: "Stream large CSV exports instead of buffering", status: "In Review",
+                 hours: 20, assignees: ["alice", "you"], pr: pr(306, author: "alice", requested: ["you"], checks: "SUCCESS")),
+            item("r-web147", repo: "web-app", n: 147, title: "Lazy-load the analytics dashboard charts", status: "In Review",
+                 hours: 4, assignees: ["bob", "you"], pr: pr(148, author: "bob", reviews: [("you", "COMMENTED")], checks: "SUCCESS")),
+            item("r-mob63", repo: "mobile", n: 63, title: "Retry failed uploads with exponential backoff", status: "In Review",
+                 hours: 9, assignees: ["erin", "you"], pr: pr(64, author: "erin", reviews: [("you", "CHANGES_REQUESTED")], decision: "CHANGES_REQUESTED", checks: "SUCCESS")),
         ]
         let open = [
             item("o-api320", repo: "api", n: 320, title: "Paginate the audit log export", status: "In Review",
@@ -78,12 +86,12 @@ enum Screenshots {
                              statusOptions: options, mine: mine.map(decode), open: open.map(decode))
     }
 
-    private static func pr(_ n: Int, draft: Bool = false, requested: [String] = [], reviews: [(String, String)] = [],
+    private static func pr(_ n: Int, author: String = "you", draft: Bool = false, requested: [String] = [], reviews: [(String, String)] = [],
                            decision: String? = nil, checks: String) -> String {
         let rv = reviews.map { #"{"author":{"login":"\#($0.0)"},"state":"\#($0.1)"}"# }.joined(separator: ",")
         let rq = requested.map { #"{"requestedReviewer":{"login":"\#($0)"}}"# }.joined(separator: ",")
         let dec = decision.map { "\"\($0)\"" } ?? "null"
-        return #"{"number":\#(n),"title":"PR \#(n)","url":"https://github.com/acme/x/pull/\#(n)","state":"OPEN","isDraft":\#(draft),"reviewDecision":\#(dec),"author":{"login":"you"},"repository":{"name":"x"},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[\#(rq)]},"latestReviews":{"nodes":[\#(rv)]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"\#(checks)"}}}]}}"#
+        return #"{"number":\#(n),"title":"PR \#(n)","url":"https://github.com/acme/x/pull/\#(n)","state":"OPEN","isDraft":\#(draft),"reviewDecision":\#(dec),"author":{"login":"\#(author)"},"repository":{"name":"x"},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[\#(rq)]},"latestReviews":{"nodes":[\#(rv)]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"\#(checks)"}}}]}}"#
     }
 
     private static func item(_ id: String, repo: String, n: Int, title: String, status: String, hours: Double,

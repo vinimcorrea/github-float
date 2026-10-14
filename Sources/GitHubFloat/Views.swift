@@ -19,6 +19,7 @@ struct ContentView: View {
                 Divider().opacity(0.5)
                 switch settings.tab {
                 case .mine: mineList
+                case .reviewing: reviewingList
                 case .open: openList
                 }
             }
@@ -97,6 +98,7 @@ struct ContentView: View {
             } else if let last = store.lastUpdated {
                 if settings.collapsed {
                     Label("\(store.mine.count)", systemImage: "person.fill").help("Mine")
+                    Label("\(store.reviewing.count)", systemImage: "eye").help("Reviewing")
                     Label("\(store.open.count)", systemImage: "person.badge.plus").help("Needs reviewer")
                     Text("·")
                 }
@@ -138,7 +140,8 @@ struct ContentView: View {
     private var tabBar: some View {
         HStack(spacing: 4) {
             tabButton(.mine, title: "Mine", icon: "person.fill", count: store.mine.count, key: "1")
-            tabButton(.open, title: "Needs reviewer", icon: "person.badge.plus", count: store.open.count, key: "2")
+            tabButton(.reviewing, title: "Reviewing", icon: "eye", count: store.reviewing.count, key: "2")
+            tabButton(.open, title: "Needs reviewer", icon: "person.badge.plus", count: store.open.count, key: "3")
         }
         .padding(3)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
@@ -150,9 +153,10 @@ struct ContentView: View {
         let selected = settings.tab == tab
         let fresh = store.changedCount(tab)
         return Button { settings.tab = tab } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 10))
                 Text(title).font(.system(size: 11, weight: selected ? .semibold : .regular))
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Text("\(count)")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
                     .padding(.horizontal, 5).padding(.vertical, 1)
@@ -196,6 +200,30 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var reviewingList: some View {
+        if store.reviewing.isEmpty {
+            empty(icon: "eye.slash", text: "You're not reviewing anything right now.\nPick one up in Needs reviewer.")
+        } else {
+            let todo = store.reviewing.filter { $0.awaitsReview(from: store.viewer) }
+            let waiting = store.reviewing.filter { !$0.awaitsReview(from: store.viewer) }
+            scroller {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    if !todo.isEmpty {
+                        plainHeader("Your turn", count: todo.count, color: .orange)
+                        ForEach(todo) { row($0, tab: .reviewing) }
+                    }
+                    if !waiting.isEmpty {
+                        plainHeader("Waiting on the author", count: waiting.count, color: .blue)
+                        ForEach(waiting) { row($0, tab: .reviewing) }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    @ViewBuilder
     private var openList: some View {
         if store.open.isEmpty {
             empty(icon: "checkmark.circle", text: "Every task in \(settings.reviewStatus) has a reviewer")
@@ -229,7 +257,7 @@ struct ContentView: View {
         let key = store.key(tab, task)
         return TaskRow(task: task,
                        viewer: store.viewer,
-                       showAssignees: tab == .open,
+                       tab: tab,
                        isNew: store.changed.contains(key)) { store.acknowledge(key) }
     }
 
@@ -247,9 +275,13 @@ struct ContentView: View {
     }
 
     private func sectionHeader(_ status: String, count: Int) -> some View {
+        plainHeader(status, count: count, color: store.color(forStatus: status))
+    }
+
+    private func plainHeader(_ title: String, count: Int, color: Color) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(store.color(forStatus: status)).frame(width: 7, height: 7)
-            Text(status.uppercased()).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(title.uppercased()).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
             Text("\(count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
             Spacer()
         }
@@ -261,7 +293,7 @@ struct ContentView: View {
 struct TaskRow: View {
     let task: BoardTask
     let viewer: String
-    let showAssignees: Bool
+    let tab: Tab
     let isNew: Bool
     let onSeen: () -> Void
     @State private var hover = false
@@ -295,7 +327,10 @@ struct TaskRow: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if showAssignees {
+            if tab == .reviewing {
+                reviewingLine
+            }
+            if tab == .open {
                 HStack(spacing: 4) {
                     Image(systemName: "person.fill").font(.system(size: 9))
                     Text(task.assignees.first ?? "Unassigned")
@@ -339,6 +374,28 @@ struct TaskRow: View {
             }
         }
         .help(task.title)
+    }
+
+    private var reviewingLine: some View {
+        let author = task.prs.compactMap(\.author).first ?? task.assignees.first { $0 != viewer } ?? "unknown"
+        let (text, color): (String, Color) = {
+            switch task.reviewState(of: viewer) {
+            case nil: return ("not reviewed yet", .orange)
+            case "REQUESTED": return ("review requested", .orange)
+            case "APPROVED": return ("you approved", .green)
+            case "CHANGES_REQUESTED": return ("you requested changes", .red)
+            case "COMMENTED": return ("you commented", .blue)
+            case let s?: return ("you: " + s.replacingOccurrences(of: "_", with: " ").lowercased(), .secondary)
+            }
+        }()
+        return HStack(spacing: 4) {
+            Image(systemName: "person.fill").font(.system(size: 9))
+            Text("by \(author)")
+            Spacer(minLength: 0)
+            Text(text).foregroundStyle(color)
+        }
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
     }
 
     private func open(_ url: String?) {
