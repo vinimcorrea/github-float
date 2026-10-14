@@ -22,25 +22,24 @@ enum SoundKind: String, CaseIterable {
         switch self {
         case .attention:
             // A quick "ti-ti-ding" up a major triad; the last note rings.
-            return [Note(.g5, at: 0, for: 0.07, voice: .bell, gain: 0.55),
-                    Note(.b5, at: 0.065, for: 0.07, voice: .bell, gain: 0.6),
-                    Note(.d6, at: 0.13, for: 0.38, voice: .bell, gain: 0.8),
-                    Note(.g4, at: 0.13, for: 0.3, voice: .keys, gain: 0.25)]
+            return [Note(.g4, at: 0, for: 0.08, voice: .bell, gain: 0.55),
+                    Note(.b4, at: 0.07, for: 0.08, voice: .bell, gain: 0.6),
+                    Note(.d5, at: 0.14, for: 0.42, voice: .bell, gain: 0.8),
+                    Note(.g3, at: 0.14, for: 0.32, voice: .keys, gain: 0.25)]
         case .good:
             // The satisfying "correct!": a bright rising fifth with a sparkle on top.
-            return [Note(.e6, at: 0, for: 0.12, voice: .bell, gain: 0.7),
-                    Note(.b6, at: 0.09, for: 0.42, voice: .bell, gain: 0.85),
-                    Note(.e5, at: 0.09, for: 0.35, voice: .keys, gain: 0.3),
-                    Note(.e7, at: 0.12, for: 0.18, voice: .bell, gain: 0.12)]
+            return [Note(.e5, at: 0, for: 0.12, voice: .bell, gain: 0.7),
+                    Note(.b5, at: 0.09, for: 0.45, voice: .bell, gain: 0.85),
+                    Note(.e4, at: 0.09, for: 0.38, voice: .keys, gain: 0.3)]
         case .bad:
             // A soft, rounded "bonk-bonk": falling, short and friendly.
-            return [Note(.d5, at: 0, for: 0.12, voice: .marimba, gain: 0.8),
-                    Note(.a4, at: 0.11, for: 0.28, voice: .marimba, gain: 0.85),
-                    Note(.a3, at: 0.11, for: 0.25, voice: .keys, gain: 0.3)]
+            return [Note(.d4, at: 0, for: 0.13, voice: .marimba, gain: 0.8),
+                    Note(.a3, at: 0.12, for: 0.3, voice: .marimba, gain: 0.85),
+                    Note(.a2, at: 0.12, for: 0.28, voice: .keys, gain: 0.3)]
         case .info:
             // A bubbly "pop".
-            return [Note(.e5, at: 0, for: 0.09, voice: .pop, gain: 0.9),
-                    Note(.b5, at: 0.02, for: 0.12, voice: .bell, gain: 0.2)]
+            return [Note(.e4, at: 0, for: 0.1, voice: .pop, gain: 0.9),
+                    Note(.b4, at: 0.025, for: 0.14, voice: .bell, gain: 0.2)]
         }
     }
 }
@@ -55,9 +54,9 @@ struct Note {
 }
 
 private extension Double {
-    static let a3 = 220.0, g4 = 392.0, a4 = 440.0
-    static let d5 = 587.33, e5 = 659.25, g5 = 783.99, b5 = 987.77
-    static let d6 = 1174.66, e6 = 1318.51, b6 = 1975.53, e7 = 2637.02
+    static let a2 = 110.0, g3 = 196.0, a3 = 220.0
+    static let d4 = 293.66, e4 = 329.63, g4 = 392.0, b4 = 493.88
+    static let d5 = 587.33, e5 = 659.25, b5 = 987.77
 }
 
 enum Sounds {
@@ -80,23 +79,22 @@ enum Sounds {
                 switch note.voice {
                 case .bell:
                     // Glassy bell: fundamental, a soft octave and a quick shimmer partial.
-                    let attack = min(1, t / 0.002)
+                    let attack = min(1, t / 0.007)
                     let body = exp(-t / (note.dur * 0.5))
                     v = attack * (sin(2 * .pi * f * t) * body
-                        + 0.3 * sin(2 * .pi * f * 2 * t) * exp(-t / (note.dur * 0.25))
-                        + 0.12 * sin(2 * .pi * f * 3.01 * t) * exp(-t / 0.03))
+                        + 0.15 * sin(2 * .pi * f * 2 * t) * exp(-t / (note.dur * 0.2)))
                 case .marimba:
-                    let attack = min(1, t / 0.003)
+                    let attack = min(1, t / 0.006)
                     v = attack * (sin(2 * .pi * f * t) * exp(-t / (note.dur * 0.45))
-                        + 0.22 * sin(2 * .pi * f * 3.93 * t) * exp(-t / 0.02))
+                        + 0.1 * sin(2 * .pi * f * 3.93 * t) * exp(-t / 0.015))
                 case .keys:
                     let attack = min(1, t / 0.006)
-                    let index = 0.9 * exp(-t / 0.08) + 0.1
+                    let index = 0.5 * exp(-t / 0.06) + 0.05
                     v = attack * sin(2 * .pi * f * t + index * sin(2 * .pi * f * t)) * exp(-t / (note.dur * 0.5))
                 case .pop:
                     // A sine whose pitch jumps up an octave in a few ms: the "bubble" sound.
                     phase += f * (1 + 1.2 * (1 - exp(-t / 0.012))) / sr
-                    v = min(1, t / 0.001) * sin(2 * .pi * phase) * exp(-t / 0.035)
+                    v = min(1, t / 0.004) * sin(2 * .pi * phase) * exp(-t / 0.04)
                 }
                 dry[s0 + i] += note.gain * release * v
             }
@@ -121,7 +119,7 @@ enum Sounds {
 
         // Warm it up: tame the top end and add gentle saturation.
         var y = 0.0
-        for i in mix.indices { y += 0.6 * (mix[i] - y); mix[i] = y }
+        for i in mix.indices { y += 0.3 * (mix[i] - y); mix[i] = y }
         let peak = mix.map(abs).max() ?? 1
         mix = mix.map { tanh(1.1 * $0 / peak) / tanh(1.1) }
 
