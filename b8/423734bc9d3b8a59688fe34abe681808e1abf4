@@ -1,0 +1,23 @@
+Sources/GitHubFloat/Model.swift
+  s_6e53066c07e7c1::t_d30fc7436c35dd 239-242,267-268,440-441,451-464
+Sources/GitHubFloat/Screenshots.swift
+  s_6e53066c07e7c1::t_8859dee39c639d 18-19
+Sources/GitHubFloat/Views.swift
+  s_6e53066c07e7c1::t_9b8812a919c728 11-12,61,91,193-195,214-215,218-219,279-284,287-338,341-344,346-351,354,356-373,556-566
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b8423734bc9d3b8a59688fe34abe681808e1abf4",
+  "prompts": {},
+  "sessions": {
+    "s_6e53066c07e7c1": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ee3e9e24cffe50LcX2v3u95xCo",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
