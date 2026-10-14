@@ -8,6 +8,8 @@ struct ContentView: View {
     let configure: () -> Void
     /// Renders lists without ScrollView (used for static screenshots).
     var staticLayout = false
+    @State private var dropTarget: String?
+    @State private var hoveredHeader: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,6 +58,7 @@ struct ContentView: View {
                 Text(settings.isConfigured ? store.projectTitle : "GitHub Float").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 subtitle
             }
+            .overlay(staticLayout ? nil : WindowDragArea())
             Spacer(minLength: 4)
             if !store.changed.isEmpty {
                 Button { store.acknowledgeAll() } label: {
@@ -85,6 +88,7 @@ struct ContentView: View {
         .padding(.horizontal, 12)
         .padding(.top, 10)
         .padding(.bottom, 6)
+        .background(staticLayout ? nil : WindowDragArea())
         .contentShape(Rectangle())
     }
 
@@ -186,11 +190,9 @@ struct ContentView: View {
         } else {
             scroller {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(store.mineGroups, id: \.status) { group in
-                        sectionHeader(group.status, count: group.tasks.count)
-                        ForEach(group.tasks) { task in
-                            row(task, tab: .mine)
-                        }
+                    let groups = store.mineGroups
+                    ForEach(Array(groups.enumerated()), id: \.element.status) { i, group in
+                        statusSection(group.status, tasks: group.tasks, index: i, total: groups.count)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -209,12 +211,12 @@ struct ContentView: View {
             scroller {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     if !todo.isEmpty {
-                        plainHeader("Your turn", count: todo.count, color: .orange)
-                        ForEach(todo) { row($0, tab: .reviewing) }
+                        foldableHeader("Your turn", tab: .reviewing, tasks: todo, color: .orange)
+                        if !isFolded(.reviewing, "Your turn") { ForEach(todo) { row($0, tab: .reviewing) } }
                     }
                     if !waiting.isEmpty {
-                        plainHeader("Waiting on the author", count: waiting.count, color: .blue)
-                        ForEach(waiting) { row($0, tab: .reviewing) }
+                        foldableHeader("Waiting on the author", tab: .reviewing, tasks: waiting, color: .blue)
+                        if !isFolded(.reviewing, "Waiting on the author") { ForEach(waiting) { row($0, tab: .reviewing) } }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -274,19 +276,101 @@ struct ContentView: View {
         .padding()
     }
 
-    private func sectionHeader(_ status: String, count: Int) -> some View {
-        plainHeader(status, count: count, color: store.color(forStatus: status))
+    // MARK: Sections
+
+    private func foldKey(_ tab: Tab, _ title: String) -> String { "\(tab.rawValue):\(title)" }
+
+    private func isFolded(_ tab: Tab, _ title: String) -> Bool {
+        settings.collapsedSections.contains(foldKey(tab, title))
     }
 
-    private func plainHeader(_ title: String, count: Int, color: Color) -> some View {
-        HStack(spacing: 6) {
+    private func toggleFold(_ tab: Tab, _ title: String) {
+        let key = foldKey(tab, title)
+        withAnimation(.easeOut(duration: 0.15)) {
+            if settings.collapsedSections.contains(key) { settings.collapsedSections.remove(key) }
+            else { settings.collapsedSections.insert(key) }
+        }
+    }
+
+    /// A "Mine" status section: foldable, and reorderable by dragging its header onto another one.
+    @ViewBuilder
+    private func statusSection(_ status: String, tasks: [BoardTask], index: Int, total: Int) -> some View {
+        let header = foldableHeader(status, tab: .mine, tasks: tasks, color: store.color(forStatus: status), draggable: !staticLayout)
+        if staticLayout {
+            header
+        } else {
+            header
+            .overlay(alignment: .top) {
+                if dropTarget == status {
+                    Capsule().fill(Color.accentColor).frame(height: 2).offset(y: 2)
+                }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                guard let dragged = items.first else { return false }
+                withAnimation(.easeOut(duration: 0.2)) { store.moveSection(dragged, to: status) }
+                return true
+            } isTargeted: { over in
+                if over { dropTarget = status } else if dropTarget == status { dropTarget = nil }
+            }
+            .contextMenu {
+                Button("Move Up") { withAnimation { store.moveSection(status, by: -1) } }.disabled(index == 0)
+                Button("Move Down") { withAnimation { store.moveSection(status, by: 1) } }.disabled(index == total - 1)
+                if !settings.sectionOrder.isEmpty {
+                    Divider()
+                    Button("Reset to Board Order") { withAnimation { settings.sectionOrder = [] } }
+                }
+            }
+        }
+        if !isFolded(.mine, status) {
+            ForEach(tasks) { row($0, tab: .mine) }
+        }
+    }
+
+    @ViewBuilder
+    private func foldableHeader(_ title: String, tab: Tab, tasks: [BoardTask], color: Color, draggable: Bool = false) -> some View {
+        let folded = isFolded(tab, title)
+        let hasNew = tasks.contains { store.changed.contains(store.key(tab, $0)) }
+        let header = HStack(spacing: 6) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(folded ? 0 : 90))
+                .frame(width: 8)
             Circle().fill(color).frame(width: 7, height: 7)
             Text(title.uppercased()).font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
-            Text("\(count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+            Text("\(tasks.count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+            if folded && hasNew {
+                Circle().fill(Color.accentColor).frame(width: 6, height: 6).help("Something changed in this section")
+            }
             Spacer()
+            if draggable && hoveredHeader == foldKey(tab, title) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .help("Drag to reorder")
+            }
         }
         .padding(.top, 6)
+        .padding(.bottom, folded ? 2 : 0)
         .padding(.horizontal, 2)
+        .contentShape(Rectangle())
+        .onTapGesture { toggleFold(tab, title) }
+        .onHover { hoveredHeader = $0 ? foldKey(tab, title) : (hoveredHeader == foldKey(tab, title) ? nil : hoveredHeader) }
+        .help(folded ? "Show \(title)" : "Hide \(title)")
+
+        if draggable {
+            header.draggable(title) {
+                HStack(spacing: 6) {
+                    Circle().fill(color).frame(width: 7, height: 7)
+                    Text(title.uppercased()).font(.system(size: 10, weight: .bold))
+                    Text("\(tasks.count)").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(.regularMaterial, in: Capsule())
+            }
+        } else {
+            header
+        }
     }
 }
 
@@ -468,4 +552,15 @@ struct PRLine: View {
         .font(.system(size: 9))
         .foregroundStyle(.secondary)
     }
+}
+
+/// Moves the panel when dragged; the panel is not movable by its whole background.
+struct WindowDragArea: NSViewRepresentable {
+    final class DragView: NSView {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    }
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

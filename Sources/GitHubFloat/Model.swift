@@ -236,6 +236,10 @@ final class Settings: ObservableObject {
     @Published var collapsed: Bool { didSet { d.set(collapsed, forKey: "collapsed") } }
     @Published var soundOnChange: Bool { didSet { d.set(soundOnChange, forKey: "soundOnChange") } }
     @Published var notifications: Bool { didSet { d.set(notifications, forKey: "notifications") } }
+    /// Custom order of the "Mine" status sections (drag and drop); statuses not listed follow the board order.
+    @Published var sectionOrder: [String] { didSet { d.set(sectionOrder, forKey: "sectionOrder") } }
+    /// Folded sections, keyed by "<tab>:<title>".
+    @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
     private init() {
         d.register(defaults: [
@@ -260,6 +264,8 @@ final class Settings: ObservableObject {
         collapsed = d.bool(forKey: "collapsed")
         soundOnChange = d.bool(forKey: "soundOnChange")
         notifications = d.bool(forKey: "notifications")
+        sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
+        collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
     }
 
     var isConfigured: Bool { !owner.isEmpty && projectNumber > 0 }
@@ -431,7 +437,8 @@ final class Store: ObservableObject {
 
     /// "Mine" grouped by status, in board order.
     var mineGroups: [(status: String, tasks: [BoardTask])] {
-        let order = statusOptions.isEmpty ? settings.statuses : statusOptions.map(\.name)
+        let board = statusOptions.isEmpty ? settings.statuses : statusOptions.map(\.name)
+        let order = settings.sectionOrder + board.filter { !settings.sectionOrder.contains($0) }
         let grouped = Dictionary(grouping: mine, by: \.status)
         let names = order.filter { grouped[$0] != nil } + grouped.keys.filter { !order.contains($0) }.sorted()
         return names.map { name in
@@ -439,6 +446,20 @@ final class Store: ObservableObject {
                 ($0.stage ?? .closed, $0.repo ?? "", $0.number ?? 0) < ($1.stage ?? .closed, $1.repo ?? "", $1.number ?? 0)
             })
         }
+    }
+
+    /// Moves the `dragged` section to the position of `target` in "Mine".
+    func moveSection(_ dragged: String, to target: String) {
+        var names = mineGroups.map(\.status)
+        guard dragged != target, let from = names.firstIndex(of: dragged), let to = names.firstIndex(of: target) else { return }
+        names.move(fromOffsets: [from], toOffset: to > from ? to + 1 : to)
+        settings.sectionOrder = names + settings.sectionOrder.filter { !names.contains($0) }
+    }
+
+    func moveSection(_ name: String, by offset: Int) {
+        let names = mineGroups.map(\.status)
+        guard let i = names.firstIndex(of: name), names.indices.contains(i + offset) else { return }
+        moveSection(name, to: names[i + offset])
     }
 
     /// Statuses worth a notification when your task enters them: the one right after the review status (e.g. "Reviewed").

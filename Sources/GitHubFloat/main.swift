@@ -76,7 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         [.closeButton, .miniaturizeButton, .zoomButton].forEach { panel.standardWindowButton($0)?.isHidden = true }
-        panel.isMovableByWindowBackground = true
+        // Moved only by its header (WindowDragArea), so dragging a section header reorders instead of moving the panel.
+        panel.isMovableByWindowBackground = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false
