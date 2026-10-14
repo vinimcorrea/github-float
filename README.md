@@ -40,7 +40,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 - 🔍 **Review state at a glance**: *awaiting review*, *being reviewed*, *changes requested*, *approved*, *merged*, plus the reviewers and CI status (✅ ❌ ⏳).
 - 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, so you can pick one up in one click.
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.
-- 🔔 **Native notifications** when something needs you: a new review, changes requested, approval, failing CI, merged PR, a task moved forward, or a new task waiting for a reviewer. Each kind of event has its own synth sound (needs you, good news, bad news, comment), and you can preview them or switch to the macOS default in the *Sound* menu.
+- 🔔 **Native notifications** when something needs you: a new review, changes requested, approval, failing CI, merged PR, a task moved forward, or a new task waiting for a reviewer. Each kind of event has its own sound. Pick a pack in the *Sound* menu: *GitHub Float Synth*, a *Meme Pack* (airhorn, ta-da!, sad trombone, dramatic boom), *Custom Sounds* (drop `attention`, `good`, `bad` and `info` audio files into the folder it opens), or the macOS default.
 - ⚡ **Efficient**: one GraphQL request per poll for all tabs. Polling pauses while your Mac sleeps or is locked and backs off on errors.
 - 🧩 **Compact mode**: collapse to a single line with your counts.
 - 🔐 **Private**: no server and no telemetry. It only talks to `api.github.com` with your own token.

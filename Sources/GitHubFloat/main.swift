@@ -224,17 +224,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(item("Send Test Notification", #selector(testNotification), key: ""))
 
         let soundMenu = NSMenu()
-        for (title, style) in [("GitHub Float Synth", "synth"), ("macOS Default", "system"), ("Off", "off")] {
+        let styles = SoundPack.allCases.map { ($0.title, $0.rawValue) } + [("Custom Sounds", "custom"), ("macOS Default", "system"), ("Off", "off")]
+        for (title, style) in styles {
             let i = item(title, #selector(setSoundStyle(_:)), key: "", represented: style)
             i.state = (style == "off" ? !settings.soundOnChange : settings.soundOnChange && settings.soundStyle == style) ? .on : .off
             soundMenu.addItem(i)
         }
+        soundMenu.addItem(item("Open Custom Sounds Folder…", #selector(openCustomSounds), key: ""))
         soundMenu.addItem(.separator())
         let previewHeader = NSMenuItem(title: "Preview", action: nil, keyEquivalent: "")
         previewHeader.isEnabled = false
         soundMenu.addItem(previewHeader)
+        let previewPack = SoundPack(rawValue: settings.soundStyle) ?? .synth
         for k in SoundKind.allCases {
-            soundMenu.addItem(item("▶︎ \(k.title)", #selector(previewSound(_:)), key: "", represented: k.rawValue))
+            soundMenu.addItem(item("▶︎ \(previewPack.label(k))", #selector(previewSound(_:)), key: "", represented: k.rawValue))
         }
         menu.addItem(submenu("Sound", soundMenu))
 
@@ -318,8 +321,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc private func previewSound(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let kind = SoundKind(rawValue: raw) else { return }
-        Sounds.play(kind)
+        Sounds.play(kind, style: settings.soundStyle == "system" ? "synth" : settings.soundStyle)
     }
+
+    @objc private func openCustomSounds() { NSWorkspace.shared.open(Sounds.customFolder) }
 
     @objc private func toggleNotifications() { settings.notifications.toggle() }
 

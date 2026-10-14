@@ -112,9 +112,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         content.title = e.title
         content.body = e.body
         if sound {
-            content.sound = Settings.shared.soundStyle == "synth" && Sounds.isBundled(e.kind)
-                ? UNNotificationSound(named: UNNotificationSoundName(e.kind.fileName))
-                : .default
+            let style = Settings.shared.soundStyle
+            if style == "custom" {
+                // The user's own files can live outside the bundle, so play them directly.
+                DispatchQueue.main.async { Sounds.play(e.kind, style: style) }
+            } else if let name = Sounds.bundledName(e.kind, style: style) {
+                content.sound = UNNotificationSound(named: UNNotificationSoundName(name))
+            } else {
+                content.sound = .default
+            }
         }
         if let url = e.url { content.userInfo = ["url": url] }
         content.threadIdentifier = e.id
