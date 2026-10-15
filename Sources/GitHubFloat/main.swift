@@ -45,7 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem!
     private let collapsedHeight: CGFloat = 50
-    private let minExpandedHeight: CGFloat = 240
+    private let minExpandedHeight: CGFloat = 130
+
+    /// Height the list's content needs; the panel never grows past `expandedHeight` (the user's chosen size).
+    private var fittedHeight: CGFloat?
 
     /// Persisted separately from the window frame so collapsing never overwrites it.
     private var expandedHeight: CGFloat {
@@ -65,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         settings.$opacity.sink { [weak self] in self?.panel.alphaValue = $0 }.store(in: &bag)
         settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
+        settings.$listOverflow.removeDuplicates()
+            .debounce(for: .milliseconds(60), scheduler: RunLoop.main)
+            .sink { [weak self] in self?.fitToContent($0) }
+            .store(in: &bag)
         Publishers.CombineLatest4(store.$mine, store.$reviewing, store.$open, store.$changed.combineLatest(store.$error))
             .sink { [weak self] mine, reviewing, open, rest in
                 self?.updateStatusItem(mine: mine.count, reviewing: reviewing.count, open: open.count,
@@ -171,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Resizes instantly (animated frames block the UI), keeping the edge nearest to the screen edge in place.
     private func applyCollapsed(_ collapsed: Bool) {
-        let height = collapsed ? collapsedHeight : expandedHeight
+        let height = collapsed ? collapsedHeight : targetExpandedHeight
         var f = panel.frame
         if !anchoredToBottom { f.origin.y += f.height - height }
         f.size.height = height
@@ -192,7 +199,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        if !settings.collapsed { expandedHeight = panel.frame.height }
+        guard !settings.collapsed else { return }
+        expandedHeight = panel.frame.height
+        fittedHeight = nil
+        fitToContent(settings.listOverflow)
+    }
+
+    private var targetExpandedHeight: CGFloat {
+        min(expandedHeight, max(minExpandedHeight, fittedHeight ?? expandedHeight))
+    }
+
+    /// Trims empty space below short lists (and grows back up to the user's size when they get longer).
+    private func fitToContent(_ overflow: CGFloat) {
+        guard settings.isConfigured, !settings.collapsed, !panel.inLiveResize else { return }
+        fittedHeight = panel.frame.height + overflow
+        let height = targetExpandedHeight.rounded()
+        guard abs(height - panel.frame.height) > 1 else { return }
+        var f = panel.frame
+        if !anchoredToBottom { f.origin.y += f.height - height }
+        f.size.height = height
+        panel.setFrame(f, display: true, animate: false)
     }
 
     // MARK: Magnetic edges

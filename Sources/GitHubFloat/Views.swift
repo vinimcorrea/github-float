@@ -10,6 +10,8 @@ struct ContentView: View {
     var staticLayout = false
     @State private var dropTarget: String?
     @State private var hoveredHeader: String?
+    @State private var naturalHeight: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,14 +35,34 @@ struct ContentView: View {
         if !settings.isConfigured {
             setup
         } else if bottom {
-            list
+            measuredList
             Divider().opacity(0.5)
             tabBar
         } else {
             tabBar
             Divider().opacity(0.5)
-            list
+            measuredList
         }
+    }
+
+    /// Reports how much the list's content over/underflows its space, so the panel can shrink to fit.
+    @ViewBuilder
+    private var measuredList: some View {
+        if staticLayout {
+            list
+        } else {
+            list
+                .frame(maxHeight: .infinity)
+                .background(GeometryReader { Color.clear.preference(key: ViewportHeightKey.self, value: $0.size.height) })
+                .onPreferenceChange(NaturalHeightKey.self) { naturalHeight = $0; reportFit() }
+                .onPreferenceChange(ViewportHeightKey.self) { viewportHeight = $0; reportFit() }
+        }
+    }
+
+    private func reportFit() {
+        guard naturalHeight > 0, viewportHeight > 0 else { return }
+        let overflow = (naturalHeight - viewportHeight).rounded()
+        if settings.listOverflow != overflow { settings.listOverflow = overflow }
     }
 
     @ViewBuilder
@@ -274,7 +296,7 @@ struct ContentView: View {
         if staticLayout {
             content().frame(maxHeight: .infinity, alignment: .top)
         } else {
-            ScrollView { content() }
+            ScrollView { content().measuringNaturalHeight() }
         }
     }
 
@@ -298,8 +320,10 @@ struct ContentView: View {
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
+        .padding(.vertical, 24)
+        .padding(.horizontal)
+        .measuringNaturalHeight()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     // MARK: Sections
@@ -616,4 +640,20 @@ struct WindowDragArea: NSViewRepresentable {
     }
     func makeNSView(context: Context) -> NSView { DragView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private struct NaturalHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private struct ViewportHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+private extension View {
+    func measuringNaturalHeight() -> some View {
+        background(GeometryReader { Color.clear.preference(key: NaturalHeightKey.self, value: $0.size.height) })
+    }
 }

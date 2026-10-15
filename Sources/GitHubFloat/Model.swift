@@ -276,6 +276,8 @@ final class Settings: ObservableObject {
     @Published var mergedStatus: String { didSet { d.set(mergedStatus, forKey: "mergedStatus") } }
     /// The panel sits in the lower part of the screen: the header goes to the bottom and the list opens upwards.
     @Published var dockedBottom = false
+    /// Runtime only: how much taller (+) or shorter (−) the list's content is than the space it gets.
+    @Published var listOverflow: CGFloat = 0
     /// Folded sections, keyed by "<tab>:<title>".
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
