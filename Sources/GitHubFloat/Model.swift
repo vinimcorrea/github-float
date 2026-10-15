@@ -274,6 +274,8 @@ final class Settings: ObservableObject {
     /// Move your own tasks to `mergedStatus` once all their PRs are merged, from any earlier column.
     @Published var autoMoveMerged: Bool { didSet { d.set(autoMoveMerged, forKey: "autoMoveMerged") } }
     @Published var mergedStatus: String { didSet { d.set(mergedStatus, forKey: "mergedStatus") } }
+    /// The panel sits in the lower part of the screen: the header goes to the bottom and the list opens upwards.
+    @Published var dockedBottom = false
     /// Folded sections, keyed by "<tab>:<title>".
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 

@@ -33,7 +33,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 
 ## ✨ Features
 
-- 🪟 **Always on top**: a non-activating floating panel that never steals focus, visible on all Spaces and over full-screen apps. Drag it anywhere; near a screen edge or corner it snaps into place like a magnet. Docked at the bottom, it opens upwards.
+- 🪟 **Always on top**: a non-activating floating panel that never steals focus, visible on all Spaces and over full-screen apps. Drag it anywhere; near a screen edge or corner it snaps into place like a magnet. Docked at the bottom, the header moves to the bottom row and the tasks open upwards, so the bar never jumps.
 - 👤 **Mine**: your tasks grouped by status (In Progress, In Review, Reviewed), each with its linked PRs.
 - 🗂️ **Your layout**: click a section header to fold it, and drag headers to put the status you care about first (or right-click → *Move Up* / *Move Down*).
 - 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.

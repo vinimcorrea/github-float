@@ -155,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         applyCollapsed(settings.collapsed)
         panel.orderFrontRegardless()
         snapToEdges()
+        updateDock()
     }
 
     private var screenOfPanel: NSScreen? {
@@ -210,10 +211,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         pendingSnap?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleSnap() } else { self.snapToEdges() }
+            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleSnap() } else { self.snapToEdges(); self.updateDock() }
         }
         pendingSnap = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    /// Flips the layout (header at the bottom) when the panel lives in the lower part of the screen.
+    private func updateDock() {
+        let bottom = anchoredToBottom
+        if settings.dockedBottom != bottom { settings.dockedBottom = bottom }
     }
 
     /// Pulls the panel to the screen edges / corners it was dropped near, and back inside the screen.

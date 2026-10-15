@@ -13,21 +13,43 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            if !settings.isConfigured {
-                if !settings.collapsed { setup }
-            } else if !settings.collapsed {
-                tabBar
-                Divider().opacity(0.5)
-                switch settings.tab {
-                case .mine: mineList
-                case .reviewing: reviewingList
-                case .open: openList
-                }
+            if bottom {
+                if !settings.collapsed { content }
+                header
+            } else {
+                header
+                if !settings.collapsed { content }
             }
         }
-        .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity, alignment: bottom ? .bottom : .top)
         .ignoresSafeArea() // the hidden title bar must not push the content down
+    }
+
+    /// Docked at the bottom of the screen: header last, so it stays put while the list opens upwards.
+    private var bottom: Bool { settings.dockedBottom }
+
+    @ViewBuilder
+    private var content: some View {
+        if !settings.isConfigured {
+            setup
+        } else if bottom {
+            list
+            Divider().opacity(0.5)
+            tabBar
+        } else {
+            tabBar
+            Divider().opacity(0.5)
+            list
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
+        switch settings.tab {
+        case .mine: mineList
+        case .reviewing: reviewingList
+        case .open: openList
+        }
     }
 
     // MARK: Setup
@@ -71,7 +93,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .help("Mark all as seen")
             }
-            iconButton(settings.collapsed ? "chevron.down" : "chevron.up", help: settings.collapsed ? "Expand" : "Collapse") {
+            iconButton(settings.collapsed != bottom ? "chevron.down" : "chevron.up", help: settings.collapsed ? "Expand" : "Collapse") {
                 settings.collapsed.toggle()
             }
             ZStack {
@@ -86,8 +108,8 @@ struct ContentView: View {
             iconButton("ellipsis.circle", help: "Options", action: showMenu)
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.top, bottom && !settings.collapsed ? 6 : 10)
+        .padding(.bottom, bottom && !settings.collapsed ? 10 : 6)
         .background(staticLayout ? nil : WindowDragArea())
         .contentShape(Rectangle())
     }
@@ -150,7 +172,8 @@ struct ContentView: View {
         .padding(3)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
         .padding(.horizontal, 10)
-        .padding(.bottom, 8)
+        .padding(.vertical, bottom ? 8 : 0)
+        .padding(.bottom, bottom ? 0 : 8)
     }
 
     private func tabButton(_ tab: Tab, title: String, icon: String, count: Int, key: KeyEquivalent) -> some View {
