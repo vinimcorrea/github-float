@@ -13,6 +13,26 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
+/// Text field that handles the standard editing shortcuts itself: an accessory app has no Edit menu to route them.
+final class EditableTextField: NSTextField {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown,
+              event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function]) == .command,
+              let key = event.charactersIgnoringModifiers?.lowercased() else { return super.performKeyEquivalent(with: event) }
+        let action: Selector?
+        switch key {
+        case "v": action = #selector(NSText.paste(_:))
+        case "c": action = #selector(NSText.copy(_:))
+        case "x": action = #selector(NSText.cut(_:))
+        case "a": action = #selector(NSText.selectAll(_:))
+        case "z": action = Selector(("undo:"))
+        default: action = nil
+        }
+        if let action, NSApp.sendAction(action, to: nil, from: self) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -38,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var bag: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMainMenu()
         buildPanel()
         buildStatusItem()
         Notifier.shared.setUp()
@@ -63,6 +84,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     // MARK: Panel
+
+    /// Never shown (accessory app), but it gives text fields the standard ⌘X/⌘C/⌘V/⌘A/⌘Z shortcuts.
+    private func buildMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        appItem.submenu = NSMenu()
+        main.addItem(appItem)
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
 
     private func buildPanel() {
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -325,9 +366,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let alert = NSAlert()
         alert.messageText = "Connect a GitHub Project"
         alert.informativeText = "Paste the project URL, e.g.\nhttps://github.com/orgs/acme/projects/5\nhttps://github.com/users/octocat/projects/2"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        alert.icon = NSApp.applicationIconImage
+        let field = EditableTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
         field.placeholderString = "https://github.com/orgs/<org>/projects/<number>"
-        if settings.isConfigured {
+        field.isEditable = true
+        field.isSelectable = true
+        if let copied = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           Settings.parseProject(copied) != nil {
+            field.stringValue = copied // a project URL on the clipboard is most likely the one to connect
+        } else if settings.isConfigured {
             field.stringValue = store.projectURL ?? "https://github.com/orgs/\(settings.owner)/projects/\(settings.projectNumber)"
         }
         alert.accessoryView = field
