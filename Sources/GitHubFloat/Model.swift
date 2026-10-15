@@ -271,6 +271,9 @@ final class Settings: ObservableObject {
     /// After you approve, move the card to the status after the review one; after you request changes,
     /// move it back to "In Progress" and unassign yourself.
     @Published var autoMove: Bool { didSet { d.set(autoMove, forKey: "autoMove") } }
+    /// Move your own tasks to `mergedStatus` once all their PRs are merged, from any earlier column.
+    @Published var autoMoveMerged: Bool { didSet { d.set(autoMoveMerged, forKey: "autoMoveMerged") } }
+    @Published var mergedStatus: String { didSet { d.set(mergedStatus, forKey: "mergedStatus") } }
     /// Folded sections, keyed by "<tab>:<title>".
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
@@ -288,6 +291,8 @@ final class Settings: ObservableObject {
             "notifications": true,
             "soundStyle": "synth",
             "autoMove": true,
+            "autoMoveMerged": true,
+            "mergedStatus": "Ready to Verify",
         ])
         owner = d.string(forKey: "owner") ?? ""
         projectNumber = d.integer(forKey: "projectNumber")
@@ -301,6 +306,8 @@ final class Settings: ObservableObject {
         notifications = d.bool(forKey: "notifications")
         soundStyle = d.string(forKey: "soundStyle") ?? "synth"
         autoMove = d.bool(forKey: "autoMove")
+        autoMoveMerged = d.bool(forKey: "autoMoveMerged")
+        mergedStatus = d.string(forKey: "mergedStatus") ?? "Ready to Verify"
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
     }
@@ -323,8 +330,16 @@ final class Settings: ObservableObject {
     }
 
     /// Everything assigned to you; split client-side into "Mine" and "Reviewing".
-    var mineFilter: String {
-        let names = statuses.isEmpty ? [] : statuses + (statuses.contains(reviewStatus) ? [] : [reviewStatus])
+    var mineFilter: String { mineFilter(extra: []) }
+
+    /// Statuses whose items are shown in "Mine" / "Reviewing" (empty = all).
+    var shownStatuses: [String] {
+        statuses.isEmpty ? [] : statuses + (statuses.contains(reviewStatus) ? [] : [reviewStatus])
+    }
+
+    func mineFilter(extra: [String]) -> String {
+        let shown = shownStatuses
+        let names = shown.isEmpty ? [] : shown + extra.filter { !shown.contains($0) }
         return ("assignee:@me " + Self.statusFilter(names)).trimmingCharacters(in: .whitespaces)
     }
     var openFilter: String { "is:open -assignee:@me " + Self.statusFilter([reviewStatus]) }
@@ -430,7 +445,7 @@ final class Store: ObservableObject {
         defer { loading = false }
         do {
             let snap = try await client.fetchBoard(owner: settings.owner, number: settings.projectNumber,
-                                                   mineFilter: settings.mineFilter, openFilter: settings.openFilter)
+                                                   mineFilter: settings.mineFilter(extra: statusesBeforeMerged), openFilter: settings.openFilter)
             apply(snap)
             failures = 0
             if error != nil { error = nil }
@@ -534,6 +549,41 @@ final class Store: ObservableObject {
         return names[i + 1]
     }
 
+    /// Board columns before the merged status: also fetched so merged work there can be moved forward.
+    private var statusesBeforeMerged: [String] {
+        guard settings.autoMoveMerged else { return [] }
+        let names = statusOptions.map(\.name)
+        guard let i = names.firstIndex(where: { $0.caseInsensitiveCompare(settings.mergedStatus) == .orderedSame }) else { return [] }
+        return Array(names[..<i])
+    }
+
+    /// Your own tasks whose linked PRs are all done (at least one merged) go to the merged status, from any earlier column.
+    private func applyMerged(_ tasks: [BoardTask]) {
+        guard settings.autoMoveMerged, let board, let target = option(named: settings.mergedStatus), let targetId = target.id else { return }
+        let earlier = Set(statusesBeforeMerged)
+        for t in tasks where earlier.contains(t.status) || t.status == "No status" {
+            guard t.prs.contains(where: { $0.stage == .merged }), t.prs.allSatisfy({ $0.stage == .merged || $0.stage == .closed }) else { continue }
+            let key = "merged:\(t.id)"
+            guard !handledVerdicts.contains(key) else { continue }
+            handledVerdicts.insert(key)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: targetId)
+                    if settings.notifications {
+                        Notifier.shared.post(.init(title: "Merged · \(t.repo.map { "\($0)#\(t.number ?? 0)" } ?? "Draft")",
+                                                   body: "\(t.title)\nMoved to \(target.name)",
+                                                   url: t.url, id: "merged-\(t.id)", kind: .info), sound: false)
+                    }
+                } catch {
+                    handledVerdicts.remove(key)
+                    self.error = "Could not move \(t.title): \(error.localizedDescription)"
+                }
+                await self.refresh()
+            }
+        }
+    }
+
     private func option(named name: String) -> StatusOption? {
         statusOptions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
@@ -582,7 +632,11 @@ final class Store: ObservableObject {
         lastUpdated = Date()
         if let v = snap.viewerId, let p = snap.projectId, let f = snap.statusFieldId { board = (v, p, f) }
 
-        let assigned = snap.mine.compactMap(BoardTask.init)
+        let fetched = snap.mine.compactMap(BoardTask.init)
+        applyMerged(fetched.filter { !$0.isReviewing(by: snap.viewer) })
+        // Extra columns are only fetched for the merged move; the tabs keep showing the configured statuses.
+        let shown = settings.shownStatuses
+        let assigned = shown.isEmpty ? fetched : fetched.filter { shown.contains($0.status) }
         applyVerdicts(assigned.filter { $0.isReviewing(by: snap.viewer) }, viewer: snap.viewer)
         let newMine = assigned.filter { !$0.isReviewing(by: snap.viewer) && (settings.statuses.isEmpty || settings.statuses.contains($0.status)) }
         // Reviewing = others' work assigned to you, until you approve / request changes or its PRs are merged or closed.

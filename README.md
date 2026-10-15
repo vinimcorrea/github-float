@@ -37,7 +37,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 - 👤 **Mine**: your tasks grouped by status (In Progress, In Review, Reviewed), each with its linked PRs.
 - 🗂️ **Your layout**: click a section header to fold it, and drag headers to put the status you care about first (or right-click → *Move Up* / *Move Down*).
 - 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.
-- 🚚 **Moves the card for you**: approve and the card goes to the next status (e.g. *Reviewed*); request changes and it goes back to *In Progress* and you're unassigned. Toggle it with *Move Cards After My Review*.
+- 🚚 **Moves the card for you**: approve and the card goes to the next status (e.g. *Reviewed*); request changes and it goes back to *In Progress* and you're unassigned. Toggle it with *Move Cards After My Review*. When all the PRs of one of your own tasks are merged, it goes to *Ready to Verify* from whatever earlier column it is in (*Move My Merged Tasks to Ready to Verify*).
 - 🔍 **Review state at a glance**: *awaiting review*, *being reviewed*, *changes requested*, *approved*, *merged*, plus the reviewers and CI status (✅ ❌ ⏳).
 - 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, and an **Assign me** button that adds you as the reviewer without opening GitHub (the task then moves to *Reviewing*).
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.

@@ -227,6 +227,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         autoMove.state = settings.autoMove ? .on : .off
         autoMove.toolTip = "Approve → next status after review. Request changes → In Progress and you're unassigned."
         menu.addItem(autoMove)
+        let autoMerged = item("Move My Merged Tasks to \(settings.mergedStatus)", #selector(toggleAutoMoveMerged), key: "")
+        autoMerged.state = settings.autoMoveMerged ? .on : .off
+        autoMerged.toolTip = "When all PRs of a task of yours are merged, move it to \(settings.mergedStatus) from any earlier column."
+        menu.addItem(autoMerged)
 
         let soundMenu = NSMenu()
         for (title, style) in [("GitHub Float Synth", "synth"), ("macOS Default", "system"), ("Off", "off")] {
@@ -329,6 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func toggleNotifications() { settings.notifications.toggle() }
 
     @objc private func toggleAutoMove() { settings.autoMove.toggle() }
+
+    @objc private func toggleAutoMoveMerged() { settings.autoMoveMerged.toggle() }
 
     @objc private func testNotification() {
         Notifier.shared.post(.init(title: "GitHub Float", body: "Notifications are working 🎉",
