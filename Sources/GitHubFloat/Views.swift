@@ -260,7 +260,9 @@ struct ContentView: View {
         return TaskRow(task: task,
                        viewer: store.viewer,
                        tab: tab,
-                       isNew: store.changed.contains(key)) { store.acknowledge(key) }
+                       isNew: store.changed.contains(key),
+                       onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
+                       assigning: store.assigning.contains(task.id)) { store.acknowledge(key) }
             .id(key + task.signature) // redraw when the card moves between sections
     }
 
@@ -380,6 +382,8 @@ struct TaskRow: View {
     let viewer: String
     let tab: Tab
     let isNew: Bool
+    var onAssign: (() -> Void)? = nil
+    var assigning = false
     let onSeen: () -> Void
     @State private var hover = false
 
@@ -420,7 +424,11 @@ struct TaskRow: View {
                     Image(systemName: "person.fill").font(.system(size: 9))
                     Text(task.assignees.first ?? "Unassigned")
                     Spacer(minLength: 0)
-                    Text("needs a reviewer").foregroundStyle(.orange)
+                    if let onAssign {
+                        assignButton(onAssign)
+                    } else {
+                        Text("needs a reviewer").foregroundStyle(.orange)
+                    }
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
@@ -448,6 +456,7 @@ struct TaskRow: View {
         .onHover { hover = $0; if $0 && isNew { onSeen() } }
         .onTapGesture { open(task.prs.first?.url ?? task.url) }
         .contextMenu {
+            if let onAssign, !assigning { Button("Assign Me as Reviewer") { onSeen(); onAssign() }; Divider() }
             if let url = task.url { Button("Open \(task.kind == "PullRequest" ? "Pull Request" : "Issue")") { open(url) } }
             ForEach(task.prs) { pr in Button("Open PR #\(pr.number)") { open(pr.url) } }
             Divider()
@@ -459,6 +468,26 @@ struct TaskRow: View {
             }
         }
         .help(task.title)
+    }
+
+    private func assignButton(_ action: @escaping () -> Void) -> some View {
+        Button { onSeen(); action() } label: {
+            HStack(spacing: 3) {
+                if assigning {
+                    ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 10))
+                }
+                Text(assigning ? "Assigning…" : "Assign me").font(.system(size: 10, weight: .semibold))
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .foregroundStyle(.white)
+            .background(Capsule().fill(Color.accentColor.opacity(assigning ? 0.5 : 0.9)))
+        }
+        .buttonStyle(.plain)
+        .disabled(assigning)
+        .help("Add yourself as the reviewer (second assignee) of this task")
     }
 
     private var reviewingLine: some View {

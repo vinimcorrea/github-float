@@ -39,7 +39,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 - 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.
 - 🚚 **Moves the card for you**: approve and the card goes to the next status (e.g. *Reviewed*); request changes and it goes back to *In Progress* and you're unassigned. Toggle it with *Move Cards After My Review*.
 - 🔍 **Review state at a glance**: *awaiting review*, *being reviewed*, *changes requested*, *approved*, *merged*, plus the reviewers and CI status (✅ ❌ ⏳).
-- 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, so you can pick one up in one click.
+- 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, and an **Assign me** button that adds you as the reviewer without opening GitHub (the task then moves to *Reviewing*).
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.
 - 🔔 **Native notifications** when something needs you: a new review, changes requested, approval, failing CI, merged PR, a task moved forward, or a new task waiting for a reviewer. Each kind of event has its own synth sound (needs you, good news, bad news, comment), and you can preview them or switch to the macOS default in the *Sound* menu.
 - ⚡ **Efficient**: one GraphQL request per poll for all tabs. Polling pauses while your Mac sleeps or is locked and backs off on errors.

@@ -345,6 +345,8 @@ final class Store: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var loading = false
     @Published private(set) var changed: Set<String> = []
+    /// Tasks being assigned to you right now (item ids).
+    @Published private(set) var assigning: Set<String> = []
 
     let settings: Settings
     private let client = GitHubClient()
@@ -443,6 +445,27 @@ final class Store: ObservableObject {
     func loadDemo(_ snap: BoardSnapshot, changed ids: Set<String>) {
         apply(snap)
         changed = ids
+    }
+
+    func canAssignMe(_ task: BoardTask) -> Bool {
+        task.kind != "DraftIssue" && task.contentId != nil && board != nil && !task.assignees.contains(viewer)
+    }
+
+    /// Picks up a task as its reviewer: adds you as an assignee, then it shows up in "Reviewing".
+    func assignMe(_ task: BoardTask) {
+        guard canAssignMe(task), let content = task.contentId, let board, !assigning.contains(task.id) else { return }
+        assigning.insert(task.id)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await client.addAssignee(board.viewerId, to: content)
+                error = nil
+            } catch {
+                self.error = "Could not assign you to \(task.title): \(error.localizedDescription)"
+            }
+            await refresh()
+            assigning.remove(task.id)
+        }
     }
 
     func acknowledge(_ id: String) { changed.remove(id) }

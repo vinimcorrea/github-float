@@ -255,6 +255,12 @@ actor GitHubClient {
         """, ["p": projectId, "i": itemId, "f": fieldId, "o": optionId])
     }
 
+    func addAssignee(_ userId: String, to assignableId: String) async throws {
+        try await mutate("""
+        mutation($a:ID!, $u:ID!) { addAssigneesToAssignable(input:{assignableId:$a, assigneeIds:[$u]}) { clientMutationId } }
+        """, ["a": assignableId, "u": userId])
+    }
+
     func removeAssignee(_ userId: String, from assignableId: String) async throws {
         try await mutate("""
         mutation($a:ID!, $u:ID!) { removeAssigneesFromAssignable(input:{assignableId:$a, assigneeIds:[$u]}) { clientMutationId } }
