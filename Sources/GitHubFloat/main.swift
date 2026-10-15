@@ -113,13 +113,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         panel.setFrameAutosaveName("GitHubFloatPanel")
         applyCollapsed(settings.collapsed)
         panel.orderFrontRegardless()
+        snapToEdges()
     }
 
-    /// Resizes instantly (animated frames block the UI), keeping the top edge in place.
+    private var screenOfPanel: NSScreen? {
+        NSScreen.screens.max { $0.frame.intersection(panel.frame).area < $1.frame.intersection(panel.frame).area }
+    }
+
+    /// A panel in the lower part of its screen grows upwards (bottom edge fixed); otherwise downwards (top edge fixed).
+    private var anchoredToBottom: Bool {
+        guard let vf = screenOfPanel?.visibleFrame else { return false }
+        let f = panel.frame
+        return f.minY - vf.minY < vf.maxY - f.maxY
+    }
+
+    /// Resizes instantly (animated frames block the UI), keeping the edge nearest to the screen edge in place.
     private func applyCollapsed(_ collapsed: Bool) {
         let height = collapsed ? collapsedHeight : expandedHeight
         var f = panel.frame
-        f.origin.y += f.height - height
+        if !anchoredToBottom { f.origin.y += f.height - height }
         f.size.height = height
         if collapsed {
             panel.minSize = NSSize(width: 260, height: collapsedHeight)
@@ -139,6 +151,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func windowDidEndLiveResize(_ notification: Notification) {
         if !settings.collapsed { expandedHeight = panel.frame.height }
+    }
+
+    // MARK: Magnetic edges
+
+    private let snapDistance: CGFloat = 48
+    private let snapMargin: CGFloat = 8
+    private var pendingSnap: DispatchWorkItem?
+
+    /// Snaps once the user lets go of the panel (moves fire continuously while dragging).
+    func windowDidMove(_ notification: Notification) {
+        guard !panel.inLiveResize else { return }
+        scheduleSnap()
+    }
+
+    private func scheduleSnap() {
+        pendingSnap?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleSnap() } else { self.snapToEdges() }
+        }
+        pendingSnap = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    /// Pulls the panel to the screen edges / corners it was dropped near, and back inside the screen.
+    private func snapToEdges() {
+        guard let vf = screenOfPanel?.visibleFrame else { return }
+        var f = panel.frame
+        if abs(f.minX - vf.minX) < snapDistance || f.minX < vf.minX { f.origin.x = vf.minX + snapMargin }
+        else if abs(vf.maxX - f.maxX) < snapDistance || f.maxX > vf.maxX { f.origin.x = vf.maxX - f.width - snapMargin }
+        if abs(vf.maxY - f.maxY) < snapDistance || f.maxY > vf.maxY { f.origin.y = vf.maxY - f.height - snapMargin }
+        else if abs(f.minY - vf.minY) < snapDistance || f.minY < vf.minY { f.origin.y = vf.minY + snapMargin }
+        guard f.origin != panel.frame.origin else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(f, display: true)
+        }
     }
 
     private func showPanel() {
