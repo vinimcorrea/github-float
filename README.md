@@ -61,7 +61,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 brew install --cask vinimcorrea/tap/github-float
 ```
 
-Upgrade with `brew upgrade --cask github-float`.
+Upgrade with `brew update && brew upgrade --cask github-float` (Homebrew refreshes taps only once a day, so without `brew update` a new release may not be seen yet).
 
 ### Download
 
