@@ -10,7 +10,41 @@ private extension NSRect {
 
 /// Lets clicks act immediately even when the panel isn't the key window.
 final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    /// Native menu for the task row under the point, in the SwiftUI root view's coordinate space.
+    var rowMenu: ((CGPoint) -> NSMenu?)?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if !showRowMenu(event) { super.rightMouseDown(with: event) }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if !(event.modifierFlags.contains(.control) && showRowMenu(event)) { super.mouseDown(with: event) }
+    }
+
+    private func showRowMenu(_ event: NSEvent) -> Bool {
+        let p = convert(event.locationInWindow, from: nil)
+        // SwiftUI measures from below the (hidden) title bar's safe area.
+        let y = (isFlipped ? p.y : bounds.height - p.y) - safeAreaInsets.top
+        guard let menu = rowMenu?(CGPoint(x: p.x - safeAreaInsets.left, y: y)) else { return false }
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        return true
+    }
+}
+
+final class ActionMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(_ title: String, _ handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    @objc private func run() { handler() }
 }
 
 /// Text field that handles the standard editing shortcuts itself: an accessory app has no Edit menu to route them.
@@ -148,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                                                          showMenu: { [weak self] in self?.popUpMenu() },
                                                          configure: { [weak self] in self?.configureProject() }))
         host.sizingOptions = [] // the window decides its size; SwiftUI must not impose min/max constraints
+        host.rowMenu = { [weak self] in self?.rowMenu(at: $0) }
         host.translatesAutoresizingMaskIntoConstraints = false
         blur.addSubview(host)
         NSLayoutConstraint.activate([
@@ -163,6 +198,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         panel.orderFrontRegardless()
         snapToEdges()
         updateDock()
+    }
+
+    private func rowMenu(at point: CGPoint) -> NSMenu? {
+        guard let hit = RowHits.shared.hit(at: point), let task = store.task(hit.tab, id: hit.id) else { return nil }
+        let store = store
+        let key = store.key(hit.tab, task)
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func open(_ url: String) {
+            store.acknowledge(key)
+            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        }
+        if hit.tab == .open, store.canAssignMe(task), !store.assigning.contains(task.id) {
+            menu.addItem(ActionMenuItem("Assign Me as Reviewer") { store.acknowledge(key); store.assignMe(task) })
+            menu.addItem(.separator())
+        }
+        if let url = task.url {
+            menu.addItem(ActionMenuItem("Open \(task.kind == "PullRequest" ? "Pull Request" : "Issue")") { open(url) })
+        }
+        for pr in task.prs {
+            menu.addItem(ActionMenuItem("Open PR #\(pr.number)") { open(pr.url) })
+        }
+        if let url = task.url ?? task.prs.first?.url {
+            menu.addItem(.separator())
+            menu.addItem(ActionMenuItem("Copy Link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url, forType: .string)
+            })
+        }
+        return menu.items.isEmpty ? nil : menu
     }
 
     private var screenOfPanel: NSScreen? {

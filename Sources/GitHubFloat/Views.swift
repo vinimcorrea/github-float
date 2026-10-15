@@ -25,6 +25,9 @@ struct ContentView: View {
         }
         .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity, alignment: bottom ? .bottom : .top)
         .ignoresSafeArea() // the hidden title bar must not push the content down
+        .coordinateSpace(name: RowHits.space)
+        .onPreferenceChange(RowFramesKey.self) { RowHits.shared.rows = $0 }
+        .onPreferenceChange(ListFrameKey.self) { RowHits.shared.list = $0 }
     }
 
     /// Docked at the bottom of the screen: header last, so it stays put while the list opens upwards.
@@ -53,7 +56,11 @@ struct ContentView: View {
         } else {
             list
                 .frame(maxHeight: .infinity)
-                .background(GeometryReader { Color.clear.preference(key: ViewportHeightKey.self, value: $0.size.height) })
+                .background(GeometryReader {
+                    Color.clear
+                        .preference(key: ViewportHeightKey.self, value: $0.size.height)
+                        .preference(key: ListFrameKey.self, value: $0.frame(in: .named(RowHits.space)))
+                })
                 .onPreferenceChange(NaturalHeightKey.self) { naturalHeight = $0; reportFit() }
                 .onPreferenceChange(ViewportHeightKey.self) { viewportHeight = $0; reportFit() }
         }
@@ -308,6 +315,9 @@ struct ContentView: View {
                        isNew: store.changed.contains(key),
                        onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
                        assigning: store.assigning.contains(task.id)) { store.acknowledge(key) }
+            .background(staticLayout ? nil : GeometryReader {
+                Color.clear.preference(key: RowFramesKey.self, value: [RowHit(frame: $0.frame(in: .named(RowHits.space)), tab: tab, id: task.id)])
+            })
             .id(key + task.signature) // redraw when the card moves between sections
     }
 
@@ -502,18 +512,7 @@ struct TaskRow: View {
         .contentShape(Rectangle())
         .onHover { hover = $0; if $0 && isNew { onSeen() } }
         .onTapGesture { open(task.prs.first?.url ?? task.url) }
-        .contextMenu {
-            if let onAssign, !assigning { Button("Assign Me as Reviewer") { onSeen(); onAssign() }; Divider() }
-            if let url = task.url { Button("Open \(task.kind == "PullRequest" ? "Pull Request" : "Issue")") { open(url) } }
-            ForEach(task.prs) { pr in Button("Open PR #\(pr.number)") { open(pr.url) } }
-            Divider()
-            if let url = task.url ?? task.prs.first?.url {
-                Button("Copy Link") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(url, forType: .string)
-                }
-            }
-        }
+        // Right-click menu: built natively by the hosting view (RowHits), SwiftUI's .contextMenu stops responding in the panel.
         .help(task.title)
     }
 
@@ -655,5 +654,40 @@ private struct ViewportHeightKey: PreferenceKey {
 private extension View {
     func measuringNaturalHeight() -> some View {
         background(GeometryReader { Color.clear.preference(key: NaturalHeightKey.self, value: $0.size.height) })
+    }
+}
+
+/// Where each task row is on screen, so a right-click can be mapped to its task.
+struct RowHit: Equatable {
+    let frame: CGRect
+    let tab: Tab
+    let id: String
+}
+
+private struct RowFramesKey: PreferenceKey {
+    static let defaultValue: [RowHit] = []
+    static func reduce(value: inout [RowHit], nextValue: () -> [RowHit]) { value += nextValue() }
+}
+
+private struct ListFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+@MainActor
+final class RowHits {
+    static let shared = RowHits()
+    /// The panel's root view: top-left origin, same size as the hosting view.
+    nonisolated static let space = "panel"
+    var rows: [RowHit] = []
+    /// The visible list area: rows scrolled under the tabs or header don't count.
+    var list: CGRect = .zero
+
+    func hit(at point: CGPoint) -> RowHit? {
+        guard list.contains(point) else { return nil }
+        return rows.last { $0.frame.contains(point) }
     }
 }

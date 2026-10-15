@@ -517,6 +517,14 @@ final class Store: ObservableObject {
 
     func key(_ tab: Tab, _ task: BoardTask) -> String { "\(tab.rawValue):\(task.id)" }
 
+    func task(_ tab: Tab, id: String) -> BoardTask? {
+        switch tab {
+        case .mine: mine.first { $0.id == id }
+        case .reviewing: reviewing.first { $0.id == id }
+        case .open: open.first { $0.id == id }
+        }
+    }
+
     /// "Mine" grouped by status, in board order.
     var mineGroups: [(status: String, tasks: [BoardTask])] {
         let board = statusOptions.isEmpty ? settings.statuses : statusOptions.map(\.name)
