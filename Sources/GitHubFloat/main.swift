@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var bag: Set<AnyCancellable> = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMouseDownMonitor()
         buildMainMenu()
         buildPanel()
         buildStatusItem()
@@ -310,11 +311,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let snapMargin: CGFloat = 8
     private var pendingSnap: DispatchWorkItem?
     private var draggedByUser = false
+    /// The left button went down on the panel itself (pressedMouseButtons alone is global and would count clicks in other apps).
+    private var mouseDownInPanel = false
+    private var mouseDownMonitor: Any?
+
+    private func installMouseDownMonitor() {
+        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.mouseDownInPanel = event.type == .leftMouseDown && event.window === self.panel
+            }
+            return event
+        }
+    }
 
     /// Snaps once the user lets go of the panel (moves fire continuously while dragging).
     func windowDidMove(_ notification: Notification) {
         guard !panel.inLiveResize, !popoverAnimating else { return }
-        if NSEvent.pressedMouseButtons & 1 != 0 { draggedByUser = true }
+        if mouseDownInPanel, NSEvent.pressedMouseButtons & 1 != 0 { draggedByUser = true }
         scheduleSnap()
     }
 
@@ -331,6 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func didFinishMove() {
         let dragged = draggedByUser
         draggedByUser = false
+        mouseDownInPanel = false
         if settings.attached {
             // Pulling the panel away from the menu bar icon detaches it.
             guard dragged, let pinned = pinnedFrame(), abs(pinned.origin.x - panel.frame.origin.x) > 2 || abs(pinned.maxY - panel.frame.maxY) > 2 else { return }
@@ -362,11 +377,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    /// Bumped on every show/hide so a finished fade-out never hides a panel that was reopened meanwhile.
+    /// Bumped on every show/hide so a finished zoom-out never hides a panel that was reopened meanwhile.
     private var popoverGeneration = 0
     private var popoverAnimating = false
     private var popoverHiding = false
-    private let popoverSlide: CGFloat = 8
+    private let popoverMinScale: CGFloat = 0.15
+
+    /// Scales the panel content around the arrow tip, i.e. the menu bar icon.
+    private func popoverTransform(_ scale: CGFloat) -> CATransform3D {
+        guard let layer = blur.layer else { return CATransform3DIdentity }
+        let size = layer.bounds.size
+        let tip = CGPoint(x: arrowX ?? size.width / 2, y: size.height)
+        let anchor = CGPoint(x: layer.anchorPoint.x * size.width, y: layer.anchorPoint.y * size.height)
+        let dx = (tip.x - anchor.x) * (1 - scale), dy = (tip.y - anchor.y) * (1 - scale)
+        return CATransform3DConcat(CATransform3DMakeScale(scale, scale, 1), CATransform3DMakeTranslation(dx, dy, 0))
+    }
+
+    /// Zooms the content to `to` scale; the window shadow is off meanwhile since it can't follow the scaling.
+    private func animatePopover(from start: CGFloat? = nil, to scale: CGFloat, duration: CFTimeInterval, spring: Bool, completion: @escaping () -> Void) {
+        blur.wantsLayer = true
+        guard let layer = blur.layer else { completion(); return }
+        let from = start.map(popoverTransform) ?? layer.presentation()?.transform ?? popoverTransform(1)
+        layer.removeAnimation(forKey: "popover")
+        panel.hasShadow = false
+        let anim: CABasicAnimation
+        if spring {
+            let s = CASpringAnimation(keyPath: "transform")
+            s.mass = 1; s.stiffness = 320; s.damping = 24; s.initialVelocity = 0
+            s.duration = s.settlingDuration
+            anim = s
+        } else {
+            anim = CABasicAnimation(keyPath: "transform")
+            anim.duration = duration
+            anim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        }
+        anim.fromValue = NSValue(caTransform3D: from)
+        anim.toValue = NSValue(caTransform3D: popoverTransform(scale))
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+        layer.add(anim, forKey: "popover")
+        CATransaction.commit()
+    }
+
+    private func finishPopoverAnimation() {
+        blur.layer?.removeAnimation(forKey: "popover")
+        panel.hasShadow = true
+        panel.invalidateShadow()
+        popoverAnimating = false
+    }
 
     private func showPanel() {
         popoverGeneration += 1
@@ -379,25 +439,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             return
         }
         pinToStatusItem()
-        let target = panel.frame
         if !panel.isVisible || popoverAnimating {
-            // Popover-style entrance: drop out of the menu bar icon while fading in.
-            if !panel.isVisible { panel.alphaValue = 0 }
+            // Popover-style entrance: grows out of the menu bar icon.
+            let wasHidden = !panel.isVisible
+            if wasHidden { panel.alphaValue = 0 }
             popoverAnimating = true
-            panel.setFrameOrigin(NSPoint(x: target.minX, y: target.minY + popoverSlide))
             panel.orderFrontRegardless()
             let generation = popoverGeneration
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.2
-                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
                 panel.animator().alphaValue = settings.opacity
-                panel.animator().setFrame(target, display: true)
-            }, completionHandler: { [weak self] in
-                MainActor.assumeIsolated {
-                    guard let self, generation == self.popoverGeneration else { return }
-                    self.popoverAnimating = false
-                }
-            })
+            }
+            animatePopover(from: wasHidden ? popoverMinScale : nil, to: 1, duration: 0.3, spring: true) { [weak self] in
+                guard let self, generation == self.popoverGeneration else { return }
+                self.finishPopoverAnimation()
+            }
         } else {
             panel.orderFrontRegardless()
         }
@@ -416,24 +472,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         popoverAnimating = true
         popoverHiding = true
         let generation = popoverGeneration
-        let start = panel.frame
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
-            panel.animator().setFrameOrigin(NSPoint(x: start.minX, y: start.minY + popoverSlide / 2))
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.popoverHiding = false
-                guard generation == self.popoverGeneration else { return }
-                self.panel.orderOut(nil)
-                self.panel.setFrameOrigin(start.origin)
-                self.panel.alphaValue = self.settings.opacity
-                self.popoverAnimating = false
-                self.updateOutsideClickMonitor()
-            }
-        })
+        }
+        // Shrinks back into the menu bar icon.
+        animatePopover(to: popoverMinScale, duration: 0.18, spring: false) { [weak self] in
+            guard let self else { return }
+            self.popoverHiding = false
+            guard generation == self.popoverGeneration else { return }
+            self.panel.orderOut(nil)
+            self.finishPopoverAnimation()
+            self.panel.alphaValue = self.settings.opacity
+            self.updateOutsideClickMonitor()
+        }
     }
 
     private var outsideClickMonitor: Any?
