@@ -73,28 +73,37 @@ for (i, row) in rows.enumerated() {
                  xRadius: 11, yRadius: 11).fill()
 }
 
-// "Eye" badge: keeping watch on your reviews.
+// Pull request badge: your PRs moving through review.
 let badge = NSRect(x: 600, y: 170, width: 230, height: 230)
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.4).cgColor)
-NSGradient(colors: [rgb(0xa371f7), rgb(0x6e40c9)])!.draw(in: NSBezierPath(ovalIn: badge), angle: -90)
+NSGradient(colors: [rgb(0x46c45a), rgb(0x238636)])!.draw(in: NSBezierPath(ovalIn: badge), angle: -90)
 ctx.restoreGState()
 NSColor.white.withAlphaComponent(0.9).setStroke()
 let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 6, dy: 6))
 ring.lineWidth = 10
 ring.stroke()
 
+// The git pull request glyph: a branch on the left, and a change on the right flowing back into it.
 let cx = badge.midX, cy = badge.midY
-let eye = NSBezierPath()
-eye.move(to: NSPoint(x: cx - 78, y: cy))
-eye.curve(to: NSPoint(x: cx + 78, y: cy), controlPoint1: NSPoint(x: cx - 40, y: cy + 62), controlPoint2: NSPoint(x: cx + 40, y: cy + 62))
-eye.curve(to: NSPoint(x: cx - 78, y: cy), controlPoint1: NSPoint(x: cx + 40, y: cy - 62), controlPoint2: NSPoint(x: cx - 40, y: cy - 62))
-NSColor.white.setFill()
-eye.fill()
-rgb(0x0d1117).setFill()
-NSBezierPath(ovalIn: NSRect(x: cx - 30, y: cy - 30, width: 60, height: 60)).fill()
-NSColor.white.setFill()
-NSBezierPath(ovalIn: NSRect(x: cx + 2, y: cy + 6, width: 16, height: 16)).fill()
+let r: CGFloat = 15, lx = cx - 36, rx = cx + 36, top = cy + 46, bottom = cy - 46
+NSColor.white.set()
+func node(_ x: CGFloat, _ y: CGFloat) {
+    let c = NSBezierPath(ovalIn: NSRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
+    c.lineWidth = 11
+    c.stroke()
+}
+node(lx, top); node(lx, bottom); node(rx, bottom)
+let stroke = NSBezierPath()
+stroke.lineWidth = 11
+stroke.lineCapStyle = .round
+stroke.lineJoinStyle = .round
+stroke.move(to: NSPoint(x: lx, y: top - r)); stroke.line(to: NSPoint(x: lx, y: bottom + r))
+stroke.move(to: NSPoint(x: rx, y: bottom + r)); stroke.line(to: NSPoint(x: rx, y: top - 22))
+stroke.curve(to: NSPoint(x: rx - 24, y: top), controlPoint1: NSPoint(x: rx, y: top - 8), controlPoint2: NSPoint(x: rx - 10, y: top))
+stroke.line(to: NSPoint(x: cx - 6, y: top))
+stroke.move(to: NSPoint(x: cx + 8, y: top + 14)); stroke.line(to: NSPoint(x: cx - 6, y: top)); stroke.line(to: NSPoint(x: cx + 8, y: top - 14))
+stroke.stroke()
 ctx.restoreGState()
 
 NSGraphicsContext.restoreGraphicsState()
