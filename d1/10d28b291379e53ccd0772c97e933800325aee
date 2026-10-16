@@ -1,0 +1,21 @@
+Icon/make_icon.swift
+  s_6e53066c07e7c1::t_a0543c044fd8fc 2,37-42,44-45,47-74,76-99,101,105,108,110,112-113
+Sources/GitHubFloat/Views.swift
+  s_6e53066c07e7c1::t_9bc6727f723b84 85-86,103-104,703-730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d110d28b291379e53ccd0772c97e933800325aee",
+  "prompts": {},
+  "sessions": {
+    "s_6e53066c07e7c1": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ee3e9e24cffe50LcX2v3u95xCo",
+        "model": "claude-opus-5.5"
+      },
+      "human_author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
