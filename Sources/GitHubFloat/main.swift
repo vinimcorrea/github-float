@@ -263,11 +263,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSScreen.screens.max { $0.frame.intersection(panel.frame).area < $1.frame.intersection(panel.frame).area }
     }
 
-    /// A panel in the lower part of its screen grows upwards (bottom edge fixed); otherwise downwards (top edge fixed).
+    /// A panel sitting at the bottom of its screen grows upwards (bottom edge fixed); otherwise downwards (top edge fixed).
+    /// Only right at the bottom (with some hysteresis), so moving it around mid-screen never flips the layout.
     private var anchoredToBottom: Bool {
-        guard let vf = screenOfPanel?.visibleFrame else { return false }
-        let f = panel.frame
-        return f.minY - vf.minY < vf.maxY - f.maxY
+        guard !settings.attached, let vf = screenOfPanel?.visibleFrame else { return false }
+        return panel.frame.minY - vf.minY < (settings.dockedBottom ? 120 : 64)
     }
 
     /// Resizes instantly (animated frames block the UI), keeping the edge nearest to the screen edge in place.
@@ -340,7 +340,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func windowDidMove(_ notification: Notification) {
         guard !panel.inLiveResize, !popoverAnimating else { return }
         if mouseDownInPanel, NSEvent.pressedMouseButtons & 1 != 0 { draggedByUser = true }
+        // Hint that letting go here attaches the panel to the menu bar icon.
+        if draggedByUser, !settings.attached { statusItem?.button?.highlight(nearStatusIcon()) }
         scheduleSnap()
+    }
+
+    /// The panel's top edge is right at the menu bar icon.
+    private func nearStatusIcon() -> Bool {
+        guard let button = statusItem?.button, let window = button.window, window.frame.height > 0,
+              let screen = window.screen ?? NSScreen.screens.first(where: { $0.frame.intersects(window.frame) }) else { return false }
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        let menuBarBottom = min(icon.minY, screen.frame.maxY - NSStatusBar.system.thickness)
+        let f = panel.frame
+        let dx = max(f.minX - icon.midX, 0, icon.midX - f.maxX)
+        return dx < 30 && menuBarBottom - f.maxY < 30 && f.maxY - screen.frame.maxY < 30
     }
 
     private func scheduleSnap() {
@@ -357,6 +370,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let dragged = draggedByUser
         draggedByUser = false
         mouseDownInPanel = false
+        if dragged, !settings.attached {
+            statusItem?.button?.highlight(false)
+            if nearStatusIcon() { settings.attached = true; return }
+        }
         if settings.attached {
             // Pulling the panel away from the menu bar icon detaches it.
             guard dragged, let pinned = pinnedFrame(), abs(pinned.origin.x - panel.frame.origin.x) > 2 || abs(pinned.maxY - panel.frame.maxY) > 2 else { return }
@@ -593,6 +610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             updateShape()
         }
         applyCollapsed(settings.collapsed)
+        updateDock()
         updateOutsideClickMonitor()
     }
 
