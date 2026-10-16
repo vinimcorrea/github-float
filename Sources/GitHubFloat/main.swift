@@ -79,7 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem!
     private let statusMenu = NSMenu()
-    private let collapsedHeight: CGFloat = 50
+    private var collapsedHeight: CGFloat { 50 + (settings.attached ? arrowHeight : 0) }
+    private let arrowHeight: CGFloat = 10
+    private let cornerRadius: CGFloat = 12
+    private var blur: NSVisualEffectView!
+    private var hostTop: NSLayoutConstraint!
+    /// Attached: x of the arrow tip that points at the menu bar icon, in panel coordinates.
+    private var arrowX: CGFloat?
     private let minExpandedHeight: CGFloat = 130
 
     /// Height the list's content needs; the panel never grows past `expandedHeight` (the user's chosen size).
@@ -182,13 +188,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         panel.hasShadow = true
         panel.delegate = self
 
-        let blur = NSVisualEffectView()
+        blur = NSVisualEffectView()
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = 12
-        blur.layer?.masksToBounds = true
 
         let host = FirstClickHostingView(rootView: ContentView(store: store, settings: settings,
                                                          showMenu: { [weak self] in self?.popUpMenu() },
@@ -197,13 +200,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         host.rowMenu = { [weak self] in self?.rowMenu(at: $0) }
         host.translatesAutoresizingMaskIntoConstraints = false
         blur.addSubview(host)
+        hostTop = host.topAnchor.constraint(equalTo: blur.topAnchor)
         NSLayoutConstraint.activate([
             host.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
-            host.topAnchor.constraint(equalTo: blur.topAnchor),
+            hostTop,
             host.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
         ])
         panel.contentView = blur
+        updateShape()
 
         panel.setFrameAutosaveName("GitHubFloatPanel")
         applyCollapsed(settings.collapsed)
@@ -398,12 +403,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         var f = panel.frame
         f.origin.x = min(max(icon.midX - f.width / 2, vf.minX + snapMargin), vf.maxX - f.width - snapMargin)
         let menuBarBottom = min(icon.minY, screen.frame.maxY - NSStatusBar.system.thickness)
-        f.origin.y = menuBarBottom - 4 - f.height
+        f.origin.y = menuBarBottom - 1 - f.height
         return f
+    }
+
+    private func iconMidX() -> CGFloat? {
+        guard let button = statusItem?.button, let window = button.window, window.frame.height > 0 else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil)).midX
+    }
+
+    /// Rounded panel background, with a popover arrow towards the menu bar icon when attached.
+    private func updateShape() {
+        let arrow = arrowX.map { min(max($0, cornerRadius + arrowHeight + 2), panel.frame.width - cornerRadius - arrowHeight - 2) }
+        hostTop.constant = arrow == nil ? 0 : arrowHeight
+        let size = blur.bounds.size == .zero ? panel.frame.size : blur.bounds.size
+        let (radius, tip) = (cornerRadius, arrowHeight)
+        blur.maskImage = NSImage(size: size, flipped: false) { rect in
+            let body = NSRect(x: 0, y: 0, width: rect.width, height: rect.height - (arrow == nil ? 0 : tip))
+            let path = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
+            if let x = arrow {
+                // A soft-edged triangle, like the macOS popover arrow.
+                let top = body.maxY, w = tip * 1.4
+                let a = NSBezierPath()
+                a.move(to: NSPoint(x: x - w - 2, y: top))
+                a.curve(to: NSPoint(x: x - 2, y: top + tip - 1.5), controlPoint1: NSPoint(x: x - w + 3, y: top), controlPoint2: NSPoint(x: x - 4, y: top + tip - 3))
+                a.curve(to: NSPoint(x: x + 2, y: top + tip - 1.5), controlPoint1: NSPoint(x: x - 1, y: top + tip), controlPoint2: NSPoint(x: x + 1, y: top + tip))
+                a.curve(to: NSPoint(x: x + w + 2, y: top), controlPoint1: NSPoint(x: x + 4, y: top + tip - 3), controlPoint2: NSPoint(x: x + w - 3, y: top))
+                a.close()
+                path.append(a)
+            }
+            NSColor.black.setFill()
+            path.fill()
+            return true
+        }
+        panel.invalidateShadow()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        if settings.attached, let mid = iconMidX() { arrowX = mid - panel.frame.minX }
+        updateShape()
     }
 
     private func pinToStatusItem(expand: Bool = true) {
         if expand, settings.collapsed { settings.collapsed = false }
+        defer { arrowX = iconMidX().map { $0 - panel.frame.minX }; updateShape() }
         guard let f = pinnedFrame(), f != panel.frame else { return }
         panel.setFrame(f, display: true, animate: false)
         updateDock()
@@ -415,7 +458,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             if panel.isVisible { showPanel() }
         } else {
             statusItem.button?.highlight(false)
+            arrowX = nil
+            updateShape()
         }
+        applyCollapsed(settings.collapsed)
         updateOutsideClickMonitor()
     }
 

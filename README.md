@@ -32,7 +32,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 ## ✨ Features
 
 - 🪟 **Always on top**: a non-activating floating panel that never steals focus, visible on all Spaces and over full-screen apps. Drag it anywhere; near a screen edge or corner it snaps into place like a magnet. Docked at the bottom, the header moves to the bottom row and the tasks open upwards, so the bar never jumps. The panel shrinks to fit short lists (folded sections leave no empty space) and grows back up to the size you dragged it to.
-- 📌 **Attach to Menu Bar**: turn it on in the menu and the panel hangs right under the menu bar icon; click the icon to show or hide it, and a click anywhere outside hides it again, like a menu bar popover. Right-click the icon for the options. Drag the panel away (or untick the option) to detach it and float it anywhere again.
+- 📌 **Attach to Menu Bar**: turn it on in the menu and the panel hangs right under the menu bar icon, with a popover arrow pointing at it; click the icon to show or hide it, and a click anywhere outside hides it again, like a menu bar popover. Right-click the icon for the options. Drag the panel away (or untick the option) to detach it and float it anywhere again.
 - 👤 **Mine**: your tasks grouped by status (In Progress, In Review, Reviewed), each with its linked PRs. *User Stories* that have sub-issues are hidden: you follow them through their sub-issues.
 - 🗂️ **Your layout**: click a section header to fold it, and drag headers to put the status you care about first (or right-click → *Move Up* / *Move Down*).
 - 👀 **Reviewing**: the tasks you are reviewing for teammates, split into *Your turn* and *Waiting on the author*, with a notification when a re-review is requested.
