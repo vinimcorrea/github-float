@@ -83,7 +83,7 @@ struct ContentView: View {
     private var setup: some View {
         VStack(spacing: 10) {
             Image(nsImage: AppMark.image(size: 34))
-                .renderingMode(.template).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
+                .renderingMode(.template).foregroundStyle(Color(red: 0.55, green: 0.42, blue: 1.0))
             Text("Track your GitHub Project").font(.system(size: 13, weight: .semibold))
             Text("Paste the URL of a GitHub Project (org or user) to see your tasks and their review state.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -101,7 +101,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(nsImage: AppMark.image(size: 16))
-                .renderingMode(.template).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
+                .renderingMode(.template).foregroundStyle(Color(red: 0.55, green: 0.42, blue: 1.0))
             VStack(alignment: .leading, spacing: 1) {
                 Text(settings.isConfigured ? store.projectTitle : "GitHub Float").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 subtitle
@@ -701,27 +701,30 @@ final class RowHits {
     func hit(at point: CGPoint) -> RowHit? { hovered }
 }
 
-/// The app's hot air balloon mark as a template image (menu bar, header, setup).
+/// The app's mark (a task card floating over a stack) as a template image: menu bar, header, setup.
 enum AppMark {
     static func image(size: CGFloat) -> NSImage {
         let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
             let s = r.width / 18
-            func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s, y: y * s) }
-            NSColor.black.set()
-            let env = NSBezierPath()
-            env.move(to: p(7.4, 7))
-            env.curve(to: p(2.6, 12.2), controlPoint1: p(5.6, 8.4), controlPoint2: p(2.6, 10.2))
-            env.curve(to: p(9, 17.6), controlPoint1: p(2.6, 15.6), controlPoint2: p(5.6, 17.6))
-            env.curve(to: p(15.4, 12.2), controlPoint1: p(12.4, 17.6), controlPoint2: p(15.4, 15.6))
-            env.curve(to: p(10.6, 7), controlPoint1: p(15.4, 10.2), controlPoint2: p(12.4, 8.4))
-            env.close()
-            env.fill()
-            let ropes = NSBezierPath()
-            ropes.lineWidth = 1.1 * s
-            ropes.move(to: p(7.6, 7)); ropes.line(to: p(7.2, 4.2))
-            ropes.move(to: p(10.4, 7)); ropes.line(to: p(10.8, 4.2))
-            ropes.stroke()
-            NSBezierPath(roundedRect: NSRect(x: 6.6 * s, y: 0.6 * s, width: 4.8 * s, height: 3.6 * s), xRadius: 1 * s, yRadius: 1 * s).fill()
+            func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> NSRect { NSRect(x: x * s, y: y * s, width: w * s, height: h * s) }
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            NSColor.black.withAlphaComponent(0.45).setFill()
+            NSBezierPath(roundedRect: rect(4, 1, 10, 4), xRadius: 1.6 * s, yRadius: 1.6 * s).fill()
+            NSColor.black.withAlphaComponent(0.7).setFill()
+            NSBezierPath(roundedRect: rect(2.8, 2.6, 12.4, 4), xRadius: 1.8 * s, yRadius: 1.8 * s).fill()
+            ctx.setBlendMode(.clear)
+            NSBezierPath(roundedRect: rect(0.4, 4.2, 17.2, 13.6), xRadius: 3 * s, yRadius: 3 * s).fill()
+            ctx.setBlendMode(.normal)
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect(1.2, 5, 15.6, 12), xRadius: 2.6 * s, yRadius: 2.6 * s).fill()
+            // Status rows punched out of the card.
+            ctx.setBlendMode(.clear)
+            for i in 0..<3 {
+                let y = 13.6 - CGFloat(i) * 3.3
+                NSBezierPath(ovalIn: rect(3.2, y - 0.9, 2, 2)).fill()
+                NSBezierPath(roundedRect: rect(6.2, y - 0.5, [7.6, 5.6, 6.6][i], 1.2), xRadius: 0.6 * s, yRadius: 0.6 * s).fill()
+            }
+            ctx.setBlendMode(.normal)
             return true
         }
         img.isTemplate = true
