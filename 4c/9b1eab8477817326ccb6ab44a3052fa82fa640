@@ -1,0 +1,14 @@
+Icon/make_icon.swift
+  h_4635714518fa69 76,80,87,89-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c9b1eab8477817326ccb6ab44a3052fa82fa640",
+  "prompts": {},
+  "humans": {
+    "h_4635714518fa69": {
+      "author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
