@@ -19,9 +19,7 @@
   <a href="https://github.com/vinimcorrea/github-float/stargazers"><img src="https://img.shields.io/github/stars/vinimcorrea/github-float?style=flat-square" alt="Stars"></a>
 </p>
 
-<p align="center">
-  <img src="docs/social-preview.png" width="820" alt="GitHub Float screenshot">
-</p>
+https://github.com/user-attachments/assets/4b6af66c-014e-48cd-9c81-252f03a28d49
 
 ---
 
