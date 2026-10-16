@@ -82,8 +82,8 @@ struct ContentView: View {
 
     private var setup: some View {
         VStack(spacing: 10) {
-            Image(systemName: "balloon.fill")
-                .font(.system(size: 30)).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
+            Image(nsImage: AppMark.image(size: 34))
+                .renderingMode(.template).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
             Text("Track your GitHub Project").font(.system(size: 13, weight: .semibold))
             Text("Paste the URL of a GitHub Project (org or user) to see your tasks and their review state.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -100,8 +100,8 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "balloon.fill")
-                .foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
+            Image(nsImage: AppMark.image(size: 16))
+                .renderingMode(.template).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
             VStack(alignment: .leading, spacing: 1) {
                 Text(settings.isConfigured ? store.projectTitle : "GitHub Float").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 subtitle
@@ -699,4 +699,32 @@ final class RowHits {
     }
 
     func hit(at point: CGPoint) -> RowHit? { hovered }
+}
+
+/// The app's hot air balloon mark as a template image (menu bar, header, setup).
+enum AppMark {
+    static func image(size: CGFloat) -> NSImage {
+        let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { r in
+            let s = r.width / 18
+            func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * s, y: y * s) }
+            NSColor.black.set()
+            let env = NSBezierPath()
+            env.move(to: p(7.4, 7))
+            env.curve(to: p(2.6, 12.2), controlPoint1: p(5.6, 8.4), controlPoint2: p(2.6, 10.2))
+            env.curve(to: p(9, 17.6), controlPoint1: p(2.6, 15.6), controlPoint2: p(5.6, 17.6))
+            env.curve(to: p(15.4, 12.2), controlPoint1: p(12.4, 17.6), controlPoint2: p(15.4, 15.6))
+            env.curve(to: p(10.6, 7), controlPoint1: p(15.4, 10.2), controlPoint2: p(12.4, 8.4))
+            env.close()
+            env.fill()
+            let ropes = NSBezierPath()
+            ropes.lineWidth = 1.1 * s
+            ropes.move(to: p(7.6, 7)); ropes.line(to: p(7.2, 4.2))
+            ropes.move(to: p(10.4, 7)); ropes.line(to: p(10.8, 4.2))
+            ropes.stroke()
+            NSBezierPath(roundedRect: NSRect(x: 6.6 * s, y: 0.6 * s, width: 4.8 * s, height: 3.6 * s), xRadius: 1 * s, yRadius: 1 * s).fill()
+            return true
+        }
+        img.isTemplate = true
+        return img
+    }
 }

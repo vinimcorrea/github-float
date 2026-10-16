@@ -679,8 +679,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "balloon.fill", accessibilityDescription: "GitHub Float")
-            ?? NSImage(systemSymbolName: "rectangle.stack.badge.person.crop", accessibilityDescription: "GitHub Float")
+        statusItem.button?.image = AppMark.image(size: 18)
+        statusItem.button?.setAccessibilityLabel("GitHub Float")
         statusItem.button?.imagePosition = .imageLeading
         statusItem.button?.target = self
         statusItem.button?.action = #selector(statusItemClicked)
