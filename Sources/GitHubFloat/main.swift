@@ -368,7 +368,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
         if Updater.shared.available, let latest = Updater.shared.latest {
-            menu.addItem(item("Update to \(latest)…", #selector(upgrade), key: ""))
+            menu.addItem(item("Update GitHub Float to \(latest)", #selector(upgrade), key: ""))
             menu.addItem(.separator())
         }
         menu.addItem(item(panel.isVisible ? "Hide Panel" : "Show Panel", #selector(togglePanel), key: ""))
@@ -560,12 +560,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    @objc private func upgrade() { Updater.shared.upgrade() }
+    @objc private func upgrade() { Task { await Updater.shared.install() } }
 
     @objc private func checkForUpdates() {
         Task {
             let updater = Updater.shared
-            let reached = await updater.check()
+            let reached = await updater.check(promptIfDue: false)
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.icon = NSApp.applicationIconImage

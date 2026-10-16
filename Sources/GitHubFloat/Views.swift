@@ -112,17 +112,6 @@ struct ContentView: View {
             }
             .overlay(staticLayout ? nil : WindowDragArea())
             Spacer(minLength: 4)
-            if updater.available, let latest = updater.latest {
-                Button { updater.upgrade() } label: {
-                    Label("Update", systemImage: "arrow.down.circle.fill")
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(Color.green))
-                        .foregroundStyle(.white)
-                }
-                .buttonStyle(.plain)
-                .help("GitHub Float \(latest) is available (you have \(updater.current ?? "?")). Click to upgrade.")
-            }
             if !store.changed.isEmpty {
                 Button { store.acknowledgeAll() } label: {
                     Text("\(store.changed.count) new")
@@ -146,7 +135,12 @@ struct ContentView: View {
                 }
             }
             .frame(width: 22, height: 22)
-            iconButton("ellipsis.circle", help: "Options", action: showMenu)
+            iconButton("ellipsis.circle", help: updater.available ? "Options · a new version of GitHub Float is available" : "Options", action: showMenu)
+                .overlay(alignment: .topTrailing) {
+                    if updater.available {
+                        Circle().fill(Color.accentColor).frame(width: 6, height: 6).offset(x: 1, y: -1).allowsHitTesting(false)
+                    }
+                }
         }
         .padding(.horizontal, 12)
         .padding(.top, bottom && !settings.collapsed ? 6 : 10)
