@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let arrowHeight: CGFloat = 10
     private let cornerRadius: CGFloat = 12
     private var blur: NSVisualEffectView!
+    private let surface = SurfaceView()
     private var hostTop: NSLayoutConstraint!
     /// Attached: x of the arrow tip that points at the menu bar icon, in panel coordinates.
     private var arrowX: CGFloat?
@@ -200,6 +201,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         host.sizingOptions = [] // the window decides its size; SwiftUI must not impose min/max constraints
         host.rowMenu = { [weak self] in self?.rowMenu(at: $0) }
         host.translatesAutoresizingMaskIntoConstraints = false
+        surface.frame = blur.bounds
+        surface.autoresizingMask = [.width, .height]
+        blur.addSubview(surface)
         blur.addSubview(host)
         hostTop = host.topAnchor.constraint(equalTo: blur.topAnchor)
         NSLayoutConstraint.activate([
@@ -531,26 +535,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let arrow = arrowX.map { min(max($0, cornerRadius + arrowHeight * 2.1), panel.frame.width - cornerRadius - arrowHeight * 2.1) }
         hostTop.constant = arrow == nil ? 0 : arrowHeight
         let size = blur.bounds.size == .zero ? panel.frame.size : blur.bounds.size
-        let (radius, tip) = (cornerRadius, arrowHeight)
-        blur.maskImage = NSImage(size: size, flipped: false) { rect in
-            let body = NSRect(x: 0, y: 0, width: rect.width, height: rect.height - (arrow == nil ? 0 : tip))
-            let path = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
-            if let x = arrow {
-                // A soft-edged triangle, like the macOS popover arrow.
-                let top = body.maxY, w = tip * 2.1, apex = top + tip
-                let a = NSBezierPath()
-                a.move(to: NSPoint(x: x - w, y: top))
-                a.curve(to: NSPoint(x: x - 4, y: apex - 2.2), controlPoint1: NSPoint(x: x - w * 0.55, y: top), controlPoint2: NSPoint(x: x - 7, y: apex - 5))
-                a.curve(to: NSPoint(x: x + 4, y: apex - 2.2), controlPoint1: NSPoint(x: x - 2, y: apex + 0.2), controlPoint2: NSPoint(x: x + 2, y: apex + 0.2))
-                a.curve(to: NSPoint(x: x + w, y: top), controlPoint1: NSPoint(x: x + 7, y: apex - 5), controlPoint2: NSPoint(x: x + w * 0.55, y: top))
-                a.close()
-                path.append(a)
-            }
-            NSColor.black.setFill()
-            path.fill()
+        let path = Self.shapePath(size: size, radius: cornerRadius, tip: arrowHeight, arrowX: arrow)
+        blur.maskImage = NSImage(size: size, flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.addPath(path)
+            ctx.setFillColor(.black)
+            ctx.fillPath()
             return true
         }
+        surface.path = path
         panel.invalidateShadow()
+    }
+
+    /// Rounded rect, plus a soft-edged popover arrow (like the macOS one) at `arrowX` when attached.
+    private static func shapePath(size: CGSize, radius: CGFloat, tip: CGFloat, arrowX: CGFloat?) -> CGPath {
+        let body = CGRect(x: 0, y: 0, width: size.width, height: size.height - (arrowX == nil ? 0 : tip))
+        let path = CGMutablePath()
+        path.addRoundedRect(in: body, cornerWidth: radius, cornerHeight: radius)
+        if let x = arrowX {
+            let top = body.maxY, w = tip * 2.1, apex = top + tip
+            path.move(to: CGPoint(x: x - w, y: top))
+            path.addCurve(to: CGPoint(x: x - 4, y: apex - 2.2), control1: CGPoint(x: x - w * 0.55, y: top), control2: CGPoint(x: x - 7, y: apex - 5))
+            path.addCurve(to: CGPoint(x: x + 4, y: apex - 2.2), control1: CGPoint(x: x - 2, y: apex + 0.2), control2: CGPoint(x: x + 2, y: apex + 0.2))
+            path.addCurve(to: CGPoint(x: x + w, y: top), control1: CGPoint(x: x + 7, y: apex - 5), control2: CGPoint(x: x + w * 0.55, y: top))
+            path.closeSubpath()
+        }
+        return path
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -929,4 +939,38 @@ MainActor.assumeIsolated {
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     withExtendedLifetime(delegate) { app.run() }
+}
+
+/// The panel's solid background, filled with the same shape as the window mask (rounded corners and arrow).
+final class SurfaceView: NSView {
+    private let shape = CAShapeLayer()
+    var path: CGPath? { didSet { shape.path = path } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.addSublayer(shape)
+        refreshColor()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        shape.frame = bounds
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshColor()
+    }
+
+    private func refreshColor() {
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // GitHub's canvas colors (dark: #161B22, light: #F6F8FA).
+        shape.fillColor = dark ? CGColor(srgbRed: 0.086, green: 0.106, blue: 0.133, alpha: 1)
+                               : CGColor(srgbRed: 0.965, green: 0.973, blue: 0.980, alpha: 1)
+    }
 }

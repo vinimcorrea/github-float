@@ -320,11 +320,20 @@ struct ContentView: View {
                        tab: tab,
                        isNew: store.changed.contains(key),
                        onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
-                       assigning: store.assigning.contains(task.id)) { store.acknowledge(key) }
+                       assigning: store.assigning.contains(task.id),
+                       accent: accent(task, tab: tab)) { store.acknowledge(key) }
             .background(staticLayout ? nil : GeometryReader {
                 Color.clear.preference(key: RowFramesKey.self, value: [RowHit(frame: $0.frame(in: .named(RowHits.space)), tab: tab, id: task.id)])
             })
             .id(key + task.signature) // redraw when the card moves between sections
+    }
+
+    private func accent(_ task: BoardTask, tab: Tab) -> Color {
+        switch tab {
+        case .mine: return store.color(forStatus: task.status)
+        case .reviewing: return task.awaitsReview(from: store.viewer) ? .orange : .blue
+        case .open: return .orange
+        }
     }
 
     @ViewBuilder
@@ -447,6 +456,8 @@ struct TaskRow: View {
     let isNew: Bool
     var onAssign: (() -> Void)? = nil
     var assigning = false
+    /// Outlook-style colored bar on the card's leading edge (the task's status color).
+    var accent: Color = .gray
     let onSeen: () -> Void
     @State private var hover = false
 
@@ -506,11 +517,15 @@ struct TaskRow: View {
             }
         }
         .padding(8)
+        .padding(.leading, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(hover ? 0.09 : 0.05))
+                .fill(Color.primary.opacity(hover ? 0.10 : 0.06))
         )
+        .overlay(alignment: .leading) {
+            Capsule().fill(accent).frame(width: 3).padding(.vertical, 8).padding(.leading, 6)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(isNew ? Color.accentColor.opacity(0.7) : .clear, lineWidth: 1)

@@ -109,14 +109,14 @@ enum Screenshots {
     }
 }
 
-/// Approximates the translucent HUD window for static renders.
+/// The panel's solid surface (see SurfaceView) for static renders.
 struct PanelChrome<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color(red: 0.13, green: 0.13, blue: 0.16).opacity(0.97))
+                    .fill(Color(red: 0.086, green: 0.106, blue: 0.133))
             )
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.12)))
