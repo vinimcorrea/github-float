@@ -82,8 +82,8 @@ struct ContentView: View {
 
     private var setup: some View {
         VStack(spacing: 10) {
-            Image(systemName: "rectangle.stack.badge.person.crop")
-                .font(.system(size: 30)).foregroundStyle(.secondary)
+            Image(systemName: "balloon.fill")
+                .font(.system(size: 30)).foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
             Text("Track your GitHub Project").font(.system(size: 13, weight: .semibold))
             Text("Paste the URL of a GitHub Project (org or user) to see your tasks and their review state.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -100,8 +100,8 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "rectangle.stack.badge.person.crop")
-                .foregroundStyle(.secondary)
+            Image(systemName: "balloon.fill")
+                .foregroundStyle(Color(red: 0.96, green: 0.42, blue: 0.29))
             VStack(alignment: .leading, spacing: 1) {
                 Text(settings.isConfigured ? store.projectTitle : "GitHub Float").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 subtitle

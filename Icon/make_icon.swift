@@ -1,4 +1,5 @@
 // Renders the GitHub Float app icon: `swift Icon/make_icon.swift Icon/AppIcon.png`
+// A task card floating up, carried by a balloon.
 import AppKit
 
 let size: CGFloat = 1024
@@ -15,95 +16,73 @@ func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> NSColor {
     NSColor(srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
             blue: CGFloat(hex & 0xff) / 255, alpha: a)
 }
+func shadow(_ dy: CGFloat, _ blur: CGFloat, _ a: CGFloat) {
+    ctx.setShadow(offset: CGSize(width: 0, height: dy), blur: blur, color: NSColor.black.withAlphaComponent(a).cgColor)
+}
 
 // macOS icon grid: 824pt squircle centered in 1024.
 let tile = NSRect(x: 100, y: 100, width: 824, height: 824)
 let tilePath = NSBezierPath(roundedRect: tile, xRadius: 185, yRadius: 185)
 
 ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: NSColor.black.withAlphaComponent(0.35).cgColor)
-rgb(0x0d1117).setFill()
+shadow(-12, 28, 0.35)
+rgb(0x1b2160).setFill()
 tilePath.fill()
 ctx.restoreGState()
 
 ctx.saveGState()
 tilePath.addClip()
-NSGradient(colors: [rgb(0x6e40c9), rgb(0x2f3d9e), rgb(0x0d1117)], atLocations: [0, 0.55, 1], colorSpace: .sRGB)!
-    .draw(in: tile, angle: -65)
+NSGradient(colors: [rgb(0x7c4dff), rgb(0x3b4cca), rgb(0x1b2160)])!.draw(in: tile, angle: -70)
 
-// Back panel (the stack).
-let back = NSRect(x: 265, y: 300, width: 520, height: 470)
+// Shadow on the "ground": the card is floating.
 ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 30, color: NSColor.black.withAlphaComponent(0.3).cgColor)
-NSColor.white.withAlphaComponent(0.22).setFill()
-NSBezierPath(roundedRect: back, xRadius: 56, yRadius: 56).fill()
+ctx.setShadow(offset: .zero, blur: 30, color: NSColor.black.withAlphaComponent(0.5).cgColor)
+NSColor.black.withAlphaComponent(0.28).setFill()
+NSBezierPath(ovalIn: NSRect(x: 512 - 180, y: 128, width: 360, height: 60)).fill()
 ctx.restoreGState()
 
-// Front floating panel.
-let panel = NSRect(x: 205, y: 225, width: 540, height: 500)
-let panelPath = NSBezierPath(roundedRect: panel, xRadius: 60, yRadius: 60)
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -26), blur: 50, color: NSColor.black.withAlphaComponent(0.45).cgColor)
-rgb(0xf6f8fa).setFill()
-panelPath.fill()
-ctx.restoreGState()
+let balloon = NSRect(x: 600, y: 680, width: 200, height: 225)
+let card = NSRect(x: 210, y: 205, width: 470, height: 375)
 
-// Panel header bar with window controls.
+// Balloon string.
+let string = NSBezierPath()
+string.lineWidth = 10
+string.move(to: NSPoint(x: balloon.midX, y: balloon.minY - 20))
+string.curve(to: NSPoint(x: card.maxX - 70, y: card.maxY - 4),
+             controlPoint1: NSPoint(x: balloon.midX + 25, y: balloon.minY - 60),
+             controlPoint2: NSPoint(x: card.maxX - 90, y: card.maxY + 40))
+NSColor.white.withAlphaComponent(0.85).setStroke()
+string.stroke()
+
+// Task card: three statuses (awaiting review / being reviewed / approved).
 ctx.saveGState()
-panelPath.addClip()
-rgb(0xe6e9ef).setFill()
-NSRect(x: panel.minX, y: panel.maxY - 92, width: panel.width, height: 92).fill()
+shadow(-20, 40, 0.35)
+NSColor.white.setFill()
+NSBezierPath(roundedRect: card, xRadius: 60, yRadius: 60).fill()
 ctx.restoreGState()
-for (i, c) in [rgb(0xff5f57), rgb(0xfebc2e), rgb(0x28c840)].enumerated() {
+for (i, c) in [rgb(0xf0883e), rgb(0x388bfd), rgb(0x2ea043)].enumerated() {
+    let y = card.maxY - 112 - CGFloat(i) * 100
     c.setFill()
-    NSBezierPath(ovalIn: NSRect(x: panel.minX + 46 + CGFloat(i) * 46, y: panel.maxY - 62, width: 30, height: 30)).fill()
+    NSBezierPath(ovalIn: NSRect(x: card.minX + 50, y: y, width: 62, height: 62)).fill()
+    rgb(0xd0d7de).setFill()
+    NSBezierPath(roundedRect: NSRect(x: card.minX + 138, y: y + 14, width: [250, 190, 220][i], height: 34),
+                 xRadius: 17, yRadius: 17).fill()
 }
 
-// Task rows: status dot + title line + PR pill (awaiting / being reviewed / approved).
-let rows: [(NSColor, CGFloat)] = [(rgb(0xf0883e), 0.78), (rgb(0x388bfd), 0.62), (rgb(0x2ea043), 0.70)]
-for (i, row) in rows.enumerated() {
-    let y = panel.maxY - 170 - CGFloat(i) * 118
-    row.0.setFill()
-    NSBezierPath(ovalIn: NSRect(x: panel.minX + 48, y: y - 4, width: 44, height: 44)).fill()
-    rgb(0x30363d, 0.85).setFill()
-    NSBezierPath(roundedRect: NSRect(x: panel.minX + 118, y: y + 16, width: (panel.width - 170) * row.1, height: 24),
-                 xRadius: 12, yRadius: 12).fill()
-    row.0.withAlphaComponent(0.35).setFill()
-    NSBezierPath(roundedRect: NSRect(x: panel.minX + 118, y: y - 20, width: 150, height: 22),
-                 xRadius: 11, yRadius: 11).fill()
-}
-
-// Pull request badge: your PRs moving through review.
-let badge = NSRect(x: 600, y: 170, width: 230, height: 230)
+// Balloon.
 ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: NSColor.black.withAlphaComponent(0.4).cgColor)
-NSGradient(colors: [rgb(0x46c45a), rgb(0x238636)])!.draw(in: NSBezierPath(ovalIn: badge), angle: -90)
+shadow(-14, 30, 0.4)
+NSGradient(colors: [rgb(0xff9a6b), rgb(0xf0583e)])!.draw(in: NSBezierPath(ovalIn: balloon), angle: -60)
 ctx.restoreGState()
-NSColor.white.withAlphaComponent(0.9).setStroke()
-let ring = NSBezierPath(ovalIn: badge.insetBy(dx: 6, dy: 6))
-ring.lineWidth = 10
-ring.stroke()
-
-// The git pull request glyph: a branch on the left, and a change on the right flowing back into it.
-let cx = badge.midX, cy = badge.midY
-let r: CGFloat = 15, lx = cx - 36, rx = cx + 36, top = cy + 46, bottom = cy - 46
-NSColor.white.set()
-func node(_ x: CGFloat, _ y: CGFloat) {
-    let c = NSBezierPath(ovalIn: NSRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-    c.lineWidth = 11
-    c.stroke()
-}
-node(lx, top); node(lx, bottom); node(rx, bottom)
-let stroke = NSBezierPath()
-stroke.lineWidth = 11
-stroke.lineCapStyle = .round
-stroke.lineJoinStyle = .round
-stroke.move(to: NSPoint(x: lx, y: top - r)); stroke.line(to: NSPoint(x: lx, y: bottom + r))
-stroke.move(to: NSPoint(x: rx, y: bottom + r)); stroke.line(to: NSPoint(x: rx, y: top - 22))
-stroke.curve(to: NSPoint(x: rx - 24, y: top), controlPoint1: NSPoint(x: rx, y: top - 8), controlPoint2: NSPoint(x: rx - 10, y: top))
-stroke.line(to: NSPoint(x: cx - 6, y: top))
-stroke.move(to: NSPoint(x: cx + 8, y: top + 14)); stroke.line(to: NSPoint(x: cx - 6, y: top)); stroke.line(to: NSPoint(x: cx + 8, y: top - 14))
-stroke.stroke()
+let knot = NSBezierPath()
+knot.move(to: NSPoint(x: balloon.midX - 16, y: balloon.minY - 22))
+knot.line(to: NSPoint(x: balloon.midX + 16, y: balloon.minY - 22))
+knot.line(to: NSPoint(x: balloon.midX, y: balloon.minY + 4))
+knot.close()
+rgb(0xf0583e).setFill()
+knot.fill()
+NSColor.white.withAlphaComponent(0.45).setFill()
+NSBezierPath(ovalIn: NSRect(x: balloon.minX + 50, y: balloon.maxY - 110, width: 50, height: 75)).fill()
 ctx.restoreGState()
 
 NSGraphicsContext.restoreGraphicsState()
