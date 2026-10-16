@@ -313,7 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Snaps once the user lets go of the panel (moves fire continuously while dragging).
     func windowDidMove(_ notification: Notification) {
-        guard !panel.inLiveResize else { return }
+        guard !panel.inLiveResize, !popoverAnimating else { return }
         if NSEvent.pressedMouseButtons & 1 != 0 { draggedByUser = true }
         scheduleSnap()
     }
@@ -362,17 +362,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
+    /// Bumped on every show/hide so a finished fade-out never hides a panel that was reopened meanwhile.
+    private var popoverGeneration = 0
+    private var popoverAnimating = false
+    private var popoverHiding = false
+    private let popoverSlide: CGFloat = 8
+
     private func showPanel() {
-        if settings.attached { pinToStatusItem() }
-        panel.orderFrontRegardless()
+        popoverGeneration += 1
+        popoverHiding = false
         statusItem?.button?.highlight(settings.attached)
+        guard settings.attached else {
+            panel.alphaValue = settings.opacity
+            panel.orderFrontRegardless()
+            updateOutsideClickMonitor()
+            return
+        }
+        pinToStatusItem()
+        let target = panel.frame
+        if !panel.isVisible || popoverAnimating {
+            // Popover-style entrance: drop out of the menu bar icon while fading in.
+            if !panel.isVisible { panel.alphaValue = 0 }
+            popoverAnimating = true
+            panel.setFrameOrigin(NSPoint(x: target.minX, y: target.minY + popoverSlide))
+            panel.orderFrontRegardless()
+            let generation = popoverGeneration
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                panel.animator().alphaValue = settings.opacity
+                panel.animator().setFrame(target, display: true)
+            }, completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.popoverGeneration else { return }
+                    self.popoverAnimating = false
+                }
+            })
+        } else {
+            panel.orderFrontRegardless()
+        }
         updateOutsideClickMonitor()
     }
 
     private func hidePanel() {
-        panel.orderOut(nil)
+        if popoverHiding { return }
+        popoverGeneration += 1
         statusItem?.button?.highlight(false)
-        updateOutsideClickMonitor()
+        guard settings.attached, panel.isVisible else {
+            panel.orderOut(nil)
+            updateOutsideClickMonitor()
+            return
+        }
+        popoverAnimating = true
+        popoverHiding = true
+        let generation = popoverGeneration
+        let start = panel.frame
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+            panel.animator().setFrameOrigin(NSPoint(x: start.minX, y: start.minY + popoverSlide / 2))
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.popoverHiding = false
+                guard generation == self.popoverGeneration else { return }
+                self.panel.orderOut(nil)
+                self.panel.setFrameOrigin(start.origin)
+                self.panel.alphaValue = self.settings.opacity
+                self.popoverAnimating = false
+                self.updateOutsideClickMonitor()
+            }
+        })
     }
 
     private var outsideClickMonitor: Any?
