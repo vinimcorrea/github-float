@@ -361,11 +361,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if settings.attached { pinToStatusItem() }
         panel.orderFrontRegardless()
         statusItem?.button?.highlight(settings.attached)
+        updateOutsideClickMonitor()
     }
 
     private func hidePanel() {
         panel.orderOut(nil)
         statusItem?.button?.highlight(false)
+        updateOutsideClickMonitor()
+    }
+
+    private var outsideClickMonitor: Any?
+
+    /// Attached, the panel behaves like a menu bar popover: a click in any other app hides it.
+    /// (Clicks in the panel, its menus or the menu bar icon are this app's own events and never reach the global monitor.)
+    private func updateOutsideClickMonitor() {
+        let wanted = settings.attached && panel.isVisible
+        if wanted, outsideClickMonitor == nil {
+            outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+                MainActor.assumeIsolated { self?.hidePanel() }
+            }
+        } else if !wanted, let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
     }
 
     // MARK: Attached to the menu bar
@@ -398,6 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         } else {
             statusItem.button?.highlight(false)
         }
+        updateOutsideClickMonitor()
     }
 
     /// Attached: left click shows/hides the panel; right click (or ⌃-click) opens the menu.
