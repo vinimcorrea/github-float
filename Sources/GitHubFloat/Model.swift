@@ -181,6 +181,18 @@ struct BoardTask: Identifiable, Hashable {
     let assignees: [String]
     let statusSince: Date?
     let prs: [PullRequest]
+    let issueType: String?
+    let subIssueCount: Int
+    let subIssues: [SubIssueRef]
+
+    struct SubIssueRef: Hashable {
+        let closed: Bool
+        /// Status per board (project id -> status name).
+        let statuses: [String: String]
+    }
+
+    /// A User Story split into sub-issues: tracked through its sub-issues, never shown itself.
+    var isSplitStory: Bool { issueType?.caseInsensitiveCompare("User Story") == .orderedSame && subIssueCount > 0 }
 
     init?(_ item: ItemNode) {
         guard let c = item.content else { return nil }
@@ -195,6 +207,12 @@ struct BoardTask: Identifiable, Hashable {
         let people = c.assignees.filter { !PullRequest.isBot($0) }
         assignees = people
         statusSince = item.status?.updatedAt.flatMap(parseISODate)
+        issueType = c.issueType
+        subIssueCount = c.subIssues?.totalCount ?? 0
+        subIssues = (c.subIssues?.nodes ?? []).map { sub in
+            let pairs = (sub.projectItems?.nodes ?? []).compactMap { $0 }.compactMap { p in p.status?.name.map { (p.project.id, $0) } }
+            return SubIssueRef(closed: sub.state == "CLOSED", statuses: Dictionary(pairs, uniquingKeysWith: { a, _ in a }))
+        }
         if let pr = c.pr {
             prs = [PullRequest(pr).withAssignedReviewers(people)]
         } else {
@@ -599,6 +617,40 @@ final class Store: ObservableObject {
         }
     }
 
+    /// A split User Story goes to the merged status once every sub-issue is closed or already at/after that status.
+    private func applyFinishedStories(_ stories: [BoardTask], projectId: String?) {
+        guard settings.autoMoveMerged, let board, let target = option(named: settings.mergedStatus), let targetId = target.id else { return }
+        let names = statusOptions.map(\.name)
+        guard let targetIndex = names.firstIndex(of: target.name) else { return }
+        let earlier = Set(statusesBeforeMerged)
+        func done(_ sub: BoardTask.SubIssueRef) -> Bool {
+            if sub.closed { return true }
+            guard let pid = projectId, let status = sub.statuses[pid], let i = names.firstIndex(of: status) else { return false }
+            return i >= targetIndex
+        }
+        for t in stories where earlier.contains(t.status) || t.status == "No status" {
+            guard t.subIssues.count == t.subIssueCount, t.subIssues.allSatisfy(done) else { continue }
+            let key = "story:\(t.id)"
+            guard !handledVerdicts.contains(key) else { continue }
+            handledVerdicts.insert(key)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: targetId)
+                    if settings.notifications {
+                        Notifier.shared.post(.init(title: "Story done · \(t.repo.map { "\($0)#\(t.number ?? 0)" } ?? "Draft")",
+                                                   body: "\(t.title)\nAll \(t.subIssueCount) sub-issues are done · Moved to \(target.name)",
+                                                   url: t.url, id: "story-\(t.id)", kind: .good), sound: settings.soundOnChange)
+                    }
+                } catch {
+                    handledVerdicts.remove(key)
+                    self.error = "Could not move \(t.title): \(error.localizedDescription)"
+                }
+                await self.refresh()
+            }
+        }
+    }
+
     private func option(named name: String) -> StatusOption? {
         statusOptions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
@@ -647,7 +699,10 @@ final class Store: ObservableObject {
         lastUpdated = Date()
         if let v = snap.viewerId, let p = snap.projectId, let f = snap.statusFieldId { board = (v, p, f) }
 
-        let fetched = snap.mine.compactMap(BoardTask.init)
+        // User Stories split into sub-issues are followed through their sub-issues, so they never show up.
+        let all = snap.mine.compactMap(BoardTask.init)
+        applyFinishedStories(all.filter(\.isSplitStory), projectId: snap.projectId)
+        let fetched = all.filter { !$0.isSplitStory }
         applyMerged(fetched.filter { !$0.isReviewing(by: snap.viewer) })
         // Extra columns are only fetched for the merged move; the tabs keep showing the configured statuses.
         let shown = settings.shownStatuses
@@ -665,7 +720,7 @@ final class Store: ObservableObject {
             }
         // Open for review = in the review status with no second (reviewer) assignee.
         let newOpen = snap.open.compactMap(BoardTask.init)
-            .filter { $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) }
+            .filter { !$0.isSplitStory && $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) }
             .sorted { ($0.statusSince ?? .distantFuture) < ($1.statusSince ?? .distantFuture) }
 
         var newSigs: [String: String] = [:]

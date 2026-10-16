@@ -105,10 +105,27 @@ struct ContentNode: Decodable {
     let assignees: [String]
     let closingPRs: [PRNode]
     let pr: PRNode?
+    let issueType: String?
+    let subIssues: SubIssues?
+
+    struct SubIssues: Decodable {
+        let totalCount: Int
+        let nodes: [SubIssue]
+    }
+    struct SubIssue: Decodable {
+        let state: String
+        let projectItems: Connection<ProjectStatus>?
+    }
+    struct ProjectStatus: Decodable {
+        let project: IDNode
+        let status: ItemNode.NameValue?
+    }
+    struct IDNode: Decodable { let id: String }
+    struct NameNode: Decodable { let name: String }
 
     enum CodingKeys: String, CodingKey {
         case typename = "__typename", id, number, title, url, issueState, repository, assignees
-        case closedByPullRequestsReferences
+        case closedByPullRequestsReferences, issueType, subIssues
     }
 
     init(from decoder: Decoder) throws {
@@ -124,6 +141,8 @@ struct ContentNode: Decodable {
         let refs = try c.decodeIfPresent(Connection<PRNode>.self, forKey: .closedByPullRequestsReferences)
         closingPRs = refs?.nodes?.compactMap { $0 } ?? []
         pr = typename == "PullRequest" ? try PRNode(from: decoder) : nil
+        issueType = try c.decodeIfPresent(NameNode.self, forKey: .issueType)?.name
+        subIssues = try c.decodeIfPresent(SubIssues.self, forKey: .subIssues)
     }
 }
 
@@ -187,6 +206,14 @@ actor GitHubClient {
             id number title url issueState: state repository { name }
             assignees(first:10) { nodes { login } }
             closedByPullRequestsReferences(first:5, includeClosedPrs:true) { nodes { ...PR } }
+            issueType { name }
+            subIssues(first:50) {
+              totalCount
+              nodes {
+                state
+                projectItems(first:5) { nodes { project { id } status: fieldValueByName(name:"Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } }
+              }
+            }
           }
           ... on PullRequest { ...PR }
         }

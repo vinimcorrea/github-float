@@ -508,7 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(autoMove)
         let autoMerged = item("Move My Merged Tasks to \(settings.mergedStatus)", #selector(toggleAutoMoveMerged), key: "")
         autoMerged.state = settings.autoMoveMerged ? .on : .off
-        autoMerged.toolTip = "When all PRs of a task of yours are merged, move it to \(settings.mergedStatus) from any earlier column."
+        autoMerged.toolTip = "When all PRs of a task of yours are merged, move it to \(settings.mergedStatus) from any earlier column. Same for a User Story once all its sub-issues are closed or in \(settings.mergedStatus) (or later)."
         menu.addItem(autoMerged)
 
         let soundMenu = NSMenu()
@@ -725,10 +725,16 @@ if CommandLine.arguments.contains("--dump") {
                     }
                 }
             }
-            let assigned = snap.mine.compactMap(BoardTask.init)
+            let all = snap.mine.compactMap(BoardTask.init)
+            print("== Split User Stories (hidden)")
+            for t in all where t.isSplitStory {
+                let open = t.subIssues.filter { !$0.closed }.map { sub in snap.projectId.flatMap { sub.statuses[$0] } ?? "?" }
+                print("[\(t.status)] \(t.repo ?? "-")#\(t.number ?? 0) \(t.title) — \(t.subIssueCount - open.count)/\(t.subIssueCount) closed; open: \(open.joined(separator: ", "))")
+            }
+            let assigned = all.filter { !$0.isSplitStory }
             dump("Mine: \(s.mineFilter)", assigned.filter { !$0.isReviewing(by: snap.viewer) })
             dump("Reviewing", assigned.filter { $0.isReviewing(by: snap.viewer) })
-            dump("Needs reviewer: \(s.openFilter) + <2 assignees", snap.open.compactMap(BoardTask.init).filter { $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) })
+            dump("Needs reviewer: \(s.openFilter) + <2 assignees", snap.open.compactMap(BoardTask.init).filter { !$0.isSplitStory && $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) })
         } catch {
             print("ERROR: \(error.localizedDescription)")
         }
