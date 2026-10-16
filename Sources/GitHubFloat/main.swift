@@ -559,7 +559,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let arrow = arrowX.map { min(max($0, cornerRadius + arrowHeight * 2.1), panel.frame.width - cornerRadius - arrowHeight * 2.1) }
         hostTop.constant = arrow == nil ? 0 : arrowHeight
         let size = blur.bounds.size == .zero ? panel.frame.size : blur.bounds.size
-        let path = Self.shapePath(size: size, radius: cornerRadius, tip: arrowHeight, arrowX: arrow)
+        let path = Self.shapePath(size: size, radius: cornerRadius, tip: arrowHeight * arrowGrow, arrowX: arrow)
         blur.maskImage = NSImage(size: size, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             ctx.addPath(path)
@@ -600,12 +600,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         updateDock()
     }
 
+    /// 0…1 while the arrow grows out of the panel towards the icon on attach.
+    private var arrowGrow: CGFloat = 1
+    private var arrowTimer: Timer?
+
+    /// Attaching a visible panel: it glides under the menu bar icon, then the arrow reaches out to the icon.
+    private func animateAttach() {
+        if settings.collapsed { settings.collapsed = false }
+        guard let target = pinnedFrame(), !popoverAnimating else { showPanel(); return }
+        popoverAnimating = true
+        statusItem?.button?.highlight(true)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+            panel.animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.popoverAnimating = false
+                guard self.settings.attached else { return }
+                self.arrowGrow = 0
+                self.showPanel()
+                self.growArrow()
+            }
+        })
+    }
+
+    private func growArrow() {
+        arrowTimer?.invalidate()
+        let start = CACurrentMediaTime(), duration = 0.22
+        arrowTimer = Timer.scheduledTimer(withTimeInterval: 1 / 120, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { timer.invalidate(); return }
+                let t = min((CACurrentMediaTime() - start) / duration, 1)
+                // Ease-out with a slight overshoot, so the arrow "snaps" onto the icon.
+                let c = 1.70158, u = t - 1
+                self.arrowGrow = CGFloat(1 + (c + 1) * u * u * u + c * u * u)
+                if t >= 1 { self.arrowGrow = 1; timer.invalidate(); self.arrowTimer = nil }
+                self.updateShape()
+            }
+        }
+    }
+
     private func applyAttached(_ attached: Bool) {
         statusItem.menu = attached ? nil : statusMenu
         if attached {
-            if panel.isVisible { showPanel() }
+            if panel.isVisible { animateAttach() }
         } else {
             statusItem.button?.highlight(false)
+            arrowTimer?.invalidate(); arrowTimer = nil; arrowGrow = 1
             arrowX = nil
             updateShape()
         }
