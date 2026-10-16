@@ -1,0 +1,18 @@
+README.md
+  h_4635714518fa69 35
+Sources/GitHubFloat/Model.swift
+  h_4635714518fa69 277-278,316
+Sources/GitHubFloat/main.swift
+  h_4635714518fa69 81,105-114,283,307,312,320,326-337,346,361,363-414,418,427-431,456-459,621-622
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f12b802e6a86a72dcb2f517d43a949c3c59114c",
+  "prompts": {},
+  "humans": {
+    "h_4635714518fa69": {
+      "author": "Vinicius Correa <73285619+vinimcorrea@users.noreply.github.com>"
+    }
+  }
+}
