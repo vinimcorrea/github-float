@@ -114,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .store(in: &bag)
 
         store.start()
+        Updater.shared.start()
         if !settings.isConfigured {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.configureProject() }
         }
@@ -366,6 +367,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func populate(_ menu: NSMenu) {
         menu.removeAllItems()
+        if Updater.shared.available, let latest = Updater.shared.latest {
+            menu.addItem(item("Update to \(latest)…", #selector(upgrade), key: ""))
+            menu.addItem(.separator())
+        }
         menu.addItem(item(panel.isVisible ? "Hide Panel" : "Show Panel", #selector(togglePanel), key: ""))
         menu.addItem(item("Refresh Now", #selector(refreshNow), key: "r"))
         menu.addItem(item("Connect a Project…", #selector(configureProject), key: ","))
@@ -441,6 +446,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(login)
 
         menu.addItem(.separator())
+        menu.addItem(item("Check for Updates… (v\(Updater.shared.current ?? "dev"))", #selector(checkForUpdates), key: ""))
         menu.addItem(item("Quit GitHub Float", #selector(quit), key: "q"))
     }
 
@@ -550,6 +556,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             else { try SMAppService.mainApp.register() }
         } catch {
             let alert = NSAlert(error: error)
+            alert.runModal()
+        }
+    }
+
+    @objc private func upgrade() { Updater.shared.upgrade() }
+
+    @objc private func checkForUpdates() {
+        Task {
+            let updater = Updater.shared
+            let reached = await updater.check()
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.icon = NSApp.applicationIconImage
+            if !reached {
+                alert.messageText = "Could not check for updates"
+                alert.informativeText = "GitHub could not be reached. Try again later."
+            } else if updater.available {
+                updater.prompt()
+                return
+            } else {
+                alert.messageText = "You're up to date"
+                alert.informativeText = "GitHub Float \(updater.current ?? "?") is the latest version."
+            }
             alert.runModal()
         }
     }

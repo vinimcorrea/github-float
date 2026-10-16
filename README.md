@@ -40,6 +40,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 - 🙋 **Needs reviewer**: teammates' tasks in review with no second assignee, and an **Assign me** button that adds you as the reviewer without opening GitHub (the task then moves to *Reviewing*).
 - ⏱️ **Time in status**: an age badge turns orange after 24h and red after 72h.
 - 🔔 **Native notifications** when something needs you: a new review, changes requested, approval, failing CI, merged PR, a task moved forward, or a new task waiting for a reviewer. Each kind of event has its own synth sound (needs you, good news, bad news, comment), and you can preview them or switch to the macOS default in the *Sound* menu.
+- ⬆️ **Update alerts**: when a new release is out, a popup offers to upgrade (Homebrew installs upgrade in Terminal and relaunch), and an **Update** button stays in the header until you do. Use *Check for Updates…* in the menu anytime.
 - ⚡ **Efficient**: one GraphQL request per poll for all tabs. Polling pauses while your Mac sleeps or is locked and backs off on errors.
 - 🧩 **Compact mode**: collapse to a single line with your counts.
 - 🔐 **Private**: no server and no telemetry. It only talks to `api.github.com` with your own token.
@@ -59,7 +60,7 @@ Your PR sits in **In Review** for two days because nobody noticed it. A teammate
 brew install --cask vinimcorrea/tap/github-float
 ```
 
-Upgrade with `brew update && brew upgrade --cask github-float` (Homebrew refreshes taps only once a day, so without `brew update` a new release may not be seen yet).
+The app tells you when a new version is out and can upgrade itself. To do it by hand, run `brew update && brew upgrade --cask github-float` (Homebrew refreshes taps only once a day, so without `brew update` a new release may not be seen yet).
 
 ### Download
 

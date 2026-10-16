@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var store: Store
     @ObservedObject var settings: Settings
+    @ObservedObject var updater = Updater.shared
     let showMenu: () -> Void
     let configure: () -> Void
     /// Renders lists without ScrollView (used for static screenshots).
@@ -111,6 +112,17 @@ struct ContentView: View {
             }
             .overlay(staticLayout ? nil : WindowDragArea())
             Spacer(minLength: 4)
+            if updater.available, let latest = updater.latest {
+                Button { updater.upgrade() } label: {
+                    Label("Update", systemImage: "arrow.down.circle.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.green))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .help("GitHub Float \(latest) is available (you have \(updater.current ?? "?")). Click to upgrade.")
+            }
             if !store.changed.isEmpty {
                 Button { store.acknowledgeAll() } label: {
                     Text("\(store.changed.count) new")
