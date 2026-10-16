@@ -414,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Rounded panel background, with a popover arrow towards the menu bar icon when attached.
     private func updateShape() {
-        let arrow = arrowX.map { min(max($0, cornerRadius + arrowHeight + 2), panel.frame.width - cornerRadius - arrowHeight - 2) }
+        let arrow = arrowX.map { min(max($0, cornerRadius + arrowHeight * 2.1), panel.frame.width - cornerRadius - arrowHeight * 2.1) }
         hostTop.constant = arrow == nil ? 0 : arrowHeight
         let size = blur.bounds.size == .zero ? panel.frame.size : blur.bounds.size
         let (radius, tip) = (cornerRadius, arrowHeight)
@@ -423,12 +423,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let path = NSBezierPath(roundedRect: body, xRadius: radius, yRadius: radius)
             if let x = arrow {
                 // A soft-edged triangle, like the macOS popover arrow.
-                let top = body.maxY, w = tip * 1.4
+                let top = body.maxY, w = tip * 2.1, apex = top + tip
                 let a = NSBezierPath()
-                a.move(to: NSPoint(x: x - w - 2, y: top))
-                a.curve(to: NSPoint(x: x - 2, y: top + tip - 1.5), controlPoint1: NSPoint(x: x - w + 3, y: top), controlPoint2: NSPoint(x: x - 4, y: top + tip - 3))
-                a.curve(to: NSPoint(x: x + 2, y: top + tip - 1.5), controlPoint1: NSPoint(x: x - 1, y: top + tip), controlPoint2: NSPoint(x: x + 1, y: top + tip))
-                a.curve(to: NSPoint(x: x + w + 2, y: top), controlPoint1: NSPoint(x: x + 4, y: top + tip - 3), controlPoint2: NSPoint(x: x + w - 3, y: top))
+                a.move(to: NSPoint(x: x - w, y: top))
+                a.curve(to: NSPoint(x: x - 4, y: apex - 2.2), controlPoint1: NSPoint(x: x - w * 0.55, y: top), controlPoint2: NSPoint(x: x - 7, y: apex - 5))
+                a.curve(to: NSPoint(x: x + 4, y: apex - 2.2), controlPoint1: NSPoint(x: x - 2, y: apex + 0.2), controlPoint2: NSPoint(x: x + 2, y: apex + 0.2))
+                a.curve(to: NSPoint(x: x + w, y: top), controlPoint1: NSPoint(x: x + 7, y: apex - 5), controlPoint2: NSPoint(x: x + w * 0.55, y: top))
                 a.close()
                 path.append(a)
             }
