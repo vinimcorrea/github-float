@@ -297,7 +297,9 @@ final class Settings: ObservableObject {
     /// The panel sits in the lower part of the screen: the header goes to the bottom and the list opens upwards.
     @Published var dockedBottom = false
     /// Runtime only: how much taller (+) or shorter (−) the list's content is than the space it gets.
-    @Published var listOverflow: CGFloat = 0
+    /// How much the list over/underflows the panel (not @Published: the whole view would re-render on every layout).
+    var listOverflow: CGFloat = 0 { didSet { if listOverflow != oldValue { listOverflowChanged.send(listOverflow) } } }
+    let listOverflowChanged = PassthroughSubject<CGFloat, Never>()
     /// Folded sections, keyed by "<tab>:<title>".
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 

@@ -15,6 +15,12 @@ final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// SwiftUI re-sets the cursor on every display cycle and mouse move; with a custom pointer size or color
+    /// (Accessibility) each set re-renders the pointer image. The panel only ever uses the arrow.
+    override func cursorUpdate(with event: NSEvent) {
+        if NSCursor.current != NSCursor.arrow { NSCursor.arrow.set() }
+    }
+
     override func rightMouseDown(with event: NSEvent) {
         if !showRowMenu(event) { super.rightMouseDown(with: event) }
     }
@@ -121,9 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             .store(in: &bag)
         settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
-        settings.$listOverflow.removeDuplicates()
-            .debounce(for: .milliseconds(60), scheduler: RunLoop.main)
-            .sink { [weak self] in self?.fitToContent($0) }
+        // Next run loop turn (not a debounce): the resize lands right with the content change.
+        settings.listOverflowChanged
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self.map { $0.fitToContent($0.settings.listOverflow) } }
             .store(in: &bag)
         Publishers.CombineLatest4(store.$mine, store.$reviewing, store.$open, store.$changed.combineLatest(store.$error))
             .sink { [weak self] mine, reviewing, open, rest in

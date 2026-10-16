@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var hoveredHeader: String?
     @State private var naturalHeight: CGFloat = 0
     @State private var viewportHeight: CGFloat = 0
+    @Namespace private var tabHighlight
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,9 +27,6 @@ struct ContentView: View {
         }
         .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity, alignment: bottom ? .bottom : .top)
         .ignoresSafeArea() // the hidden title bar must not push the content down
-        .coordinateSpace(name: RowHits.space)
-        .onPreferenceChange(RowFramesKey.self) { RowHits.shared.rows = $0 }
-        .onPreferenceChange(ListFrameKey.self) { RowHits.shared.list = $0 }
     }
 
     /// Docked at the bottom of the screen: header last, so it stays put while the list opens upwards.
@@ -58,9 +56,7 @@ struct ContentView: View {
             list
                 .frame(maxHeight: .infinity)
                 .background(GeometryReader {
-                    Color.clear
-                        .preference(key: ViewportHeightKey.self, value: $0.size.height)
-                        .preference(key: ListFrameKey.self, value: $0.frame(in: .named(RowHits.space)))
+                    Color.clear.preference(key: ViewportHeightKey.self, value: $0.size.height)
                 })
                 .onPreferenceChange(NaturalHeightKey.self) { naturalHeight = $0; reportFit() }
                 .onPreferenceChange(ViewportHeightKey.self) { viewportHeight = $0; reportFit() }
@@ -206,6 +202,7 @@ struct ContentView: View {
         }
         .padding(3)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+        .animation(.spring(response: 0.22, dampingFraction: 0.86), value: settings.tab)
         .padding(.horizontal, 10)
         .padding(.vertical, bottom ? 8 : 0)
         .padding(.bottom, bottom ? 0 : 8)
@@ -227,13 +224,20 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(selected ? Color.primary.opacity(0.12) : .clear)
-            )
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.primary.opacity(0.12))
+                        .matchedGeometryEffect(id: "tab", in: tabHighlight)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Switch on mouse down (like Safari tabs) instead of waiting for the click to finish.
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in
+            if settings.tab != tab { settings.tab = tab }
+        })
         .foregroundStyle(selected ? .primary : .secondary)
         .keyboardShortcut(key, modifiers: .command)
         .help("\(title) (⌘\(key.character))")
@@ -247,7 +251,7 @@ struct ContentView: View {
             empty(icon: "tray", text: "Nothing assigned to you in \(settings.statuses.joined(separator: ", "))")
         } else {
             scroller {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     let groups = store.mineGroups
                     ForEach(Array(groups.enumerated()), id: \.element.status) { i, group in
                         statusSection(group.status, tasks: group.tasks, index: i, total: groups.count)
@@ -267,7 +271,7 @@ struct ContentView: View {
             let todo = store.reviewing.filter { $0.awaitsReview(from: store.viewer) }
             let waiting = store.reviewing.filter { !$0.awaitsReview(from: store.viewer) }
             scroller {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     if !todo.isEmpty {
                         foldableHeader("Your turn", tab: .reviewing, tasks: todo, color: .orange)
                         if !isFolded(.reviewing, "Your turn") { ForEach(todo) { row($0, tab: .reviewing) } }
@@ -289,7 +293,7 @@ struct ContentView: View {
             empty(icon: "checkmark.circle", text: "Every task in \(settings.reviewStatus) has a reviewer")
         } else {
             scroller {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Others' tasks in \(settings.reviewStatus) without a reviewer assigned · longest waiting first")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
@@ -322,9 +326,6 @@ struct ContentView: View {
                        onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
                        assigning: store.assigning.contains(task.id),
                        accent: accent(task, tab: tab)) { store.acknowledge(key) }
-            .background(staticLayout ? nil : GeometryReader {
-                Color.clear.preference(key: RowFramesKey.self, value: [RowHit(frame: $0.frame(in: .named(RowHits.space)), tab: tab, id: task.id)])
-            })
             .id(key + task.signature) // redraw when the card moves between sections
     }
 
@@ -531,9 +532,13 @@ struct TaskRow: View {
                 .strokeBorder(isNew ? Color.accentColor.opacity(0.7) : .clear, lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onHover { hover = $0; if $0 && isNew { onSeen() } }
+        .onHover {
+            hover = $0
+            RowHits.shared.hover(RowHit(tab: tab, id: task.id), $0)
+            if $0 && isNew { onSeen() }
+        }
         .onTapGesture { open(task.prs.first?.url ?? task.url) }
-        // Right-click menu: built natively by the hosting view (RowHits), SwiftUI's .contextMenu stops responding in the panel.
+        // Right-click menu: built natively by the hosting view for the hovered row (RowHits), SwiftUI's .contextMenu stops responding in the panel.
         .help(task.title)
     }
 
@@ -678,37 +683,20 @@ private extension View {
     }
 }
 
-/// Where each task row is on screen, so a right-click can be mapped to its task.
+/// The task row under the mouse, so a right-click can be mapped to its task.
 struct RowHit: Equatable {
-    let frame: CGRect
     let tab: Tab
     let id: String
-}
-
-private struct RowFramesKey: PreferenceKey {
-    static let defaultValue: [RowHit] = []
-    static func reduce(value: inout [RowHit], nextValue: () -> [RowHit]) { value += nextValue() }
-}
-
-private struct ListFrameKey: PreferenceKey {
-    static let defaultValue: CGRect = .zero
-    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-        let next = nextValue()
-        if next != .zero { value = next }
-    }
 }
 
 @MainActor
 final class RowHits {
     static let shared = RowHits()
-    /// The panel's root view: top-left origin, same size as the hosting view.
-    nonisolated static let space = "panel"
-    var rows: [RowHit] = []
-    /// The visible list area: rows scrolled under the tabs or header don't count.
-    var list: CGRect = .zero
+    private(set) var hovered: RowHit?
 
-    func hit(at point: CGPoint) -> RowHit? {
-        guard list.contains(point) else { return nil }
-        return rows.last { $0.frame.contains(point) }
+    func hover(_ row: RowHit, _ inside: Bool) {
+        if inside { hovered = row } else if hovered == row { hovered = nil }
     }
+
+    func hit(at point: CGPoint) -> RowHit? { hovered }
 }
