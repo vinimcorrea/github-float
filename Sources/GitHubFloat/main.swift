@@ -78,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private lazy var store = Store(settings: settings)
     private var panel: FloatingPanel!
     private var statusItem: NSStatusItem!
+    private let statusMenu = NSMenu()
     private let collapsedHeight: CGFloat = 50
     private let minExpandedHeight: CGFloat = 130
 
@@ -101,6 +102,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         Notifier.shared.setUp()
 
         settings.$opacity.sink { [weak self] in self?.panel.alphaValue = $0 }.store(in: &bag)
+        settings.$attached.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyAttached($0) }.store(in: &bag)
+        if settings.attached { showPanel() }
+        // Follows the icon when the menu bar is laid out (launch, other icons, display changes).
+        NotificationCenter.default.publisher(for: NSWindow.didMoveNotification, object: statusItem.button?.window)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.settings.attached, self.panel.isVisible else { return }
+                self.pinToStatusItem(expand: false)
+            }
+            .store(in: &bag)
         settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
         settings.$listOverflow.removeDuplicates()
             .debounce(for: .milliseconds(60), scheduler: RunLoop.main)
@@ -269,6 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         expandedHeight = panel.frame.height
         fittedHeight = nil
         fitToContent(settings.listOverflow)
+        if settings.attached { pinToStatusItem() }
     }
 
     private var targetExpandedHeight: CGFloat {
@@ -292,10 +304,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let snapDistance: CGFloat = 48
     private let snapMargin: CGFloat = 8
     private var pendingSnap: DispatchWorkItem?
+    private var draggedByUser = false
 
     /// Snaps once the user lets go of the panel (moves fire continuously while dragging).
     func windowDidMove(_ notification: Notification) {
         guard !panel.inLiveResize else { return }
+        if NSEvent.pressedMouseButtons & 1 != 0 { draggedByUser = true }
         scheduleSnap()
     }
 
@@ -303,10 +317,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         pendingSnap?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleSnap() } else { self.snapToEdges(); self.updateDock() }
+            if NSEvent.pressedMouseButtons & 1 != 0 { self.scheduleSnap() } else { self.didFinishMove() }
         }
         pendingSnap = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+    }
+
+    private func didFinishMove() {
+        let dragged = draggedByUser
+        draggedByUser = false
+        if settings.attached {
+            // Pulling the panel away from the menu bar icon detaches it.
+            guard dragged, let pinned = pinnedFrame(), abs(pinned.origin.x - panel.frame.origin.x) > 2 || abs(pinned.maxY - panel.frame.maxY) > 2 else { return }
+            settings.attached = false
+        }
+        snapToEdges()
+        updateDock()
     }
 
     /// Flips the layout (header at the bottom) when the panel lives in the lower part of the screen.
@@ -317,7 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Pulls the panel to the screen edges / corners it was dropped near, and back inside the screen.
     private func snapToEdges() {
-        guard let vf = screenOfPanel?.visibleFrame else { return }
+        guard !settings.attached, let vf = screenOfPanel?.visibleFrame else { return }
         var f = panel.frame
         if abs(f.minX - vf.minX) < snapDistance || f.minX < vf.minX { f.origin.x = vf.minX + snapMargin }
         else if abs(vf.maxX - f.maxX) < snapDistance || f.maxX > vf.maxX { f.origin.x = vf.maxX - f.width - snapMargin }
@@ -332,11 +358,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     private func showPanel() {
+        if settings.attached { pinToStatusItem() }
         panel.orderFrontRegardless()
+        statusItem?.button?.highlight(settings.attached)
+    }
+
+    private func hidePanel() {
+        panel.orderOut(nil)
+        statusItem?.button?.highlight(false)
+    }
+
+    // MARK: Attached to the menu bar
+
+    /// Right under the menu bar icon, centered on it and kept inside its screen.
+    private func pinnedFrame() -> NSRect? {
+        guard let button = statusItem?.button, let window = button.window,
+              window.frame.height > 0, // not laid out yet right after launch
+              let screen = window.screen ?? NSScreen.screens.first(where: { $0.frame.intersects(window.frame) }) else { return nil }
+        let icon = window.convertToScreen(button.convert(button.bounds, to: nil))
+        let vf = screen.visibleFrame
+        var f = panel.frame
+        f.origin.x = min(max(icon.midX - f.width / 2, vf.minX + snapMargin), vf.maxX - f.width - snapMargin)
+        let menuBarBottom = min(icon.minY, screen.frame.maxY - NSStatusBar.system.thickness)
+        f.origin.y = menuBarBottom - 4 - f.height
+        return f
+    }
+
+    private func pinToStatusItem(expand: Bool = true) {
+        if expand, settings.collapsed { settings.collapsed = false }
+        guard let f = pinnedFrame(), f != panel.frame else { return }
+        panel.setFrame(f, display: true, animate: false)
+        updateDock()
+    }
+
+    private func applyAttached(_ attached: Bool) {
+        statusItem.menu = attached ? nil : statusMenu
+        if attached {
+            if panel.isVisible { showPanel() }
+        } else {
+            statusItem.button?.highlight(false)
+        }
+    }
+
+    /// Attached: left click shows/hides the panel; right click (or ⌃-click) opens the menu.
+    @objc private func statusItemClicked(_ sender: Any?) {
+        guard settings.attached else { return }
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            statusItem.menu = statusMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+            if panel.isVisible { statusItem.button?.highlight(true) }
+        } else {
+            togglePanel()
+        }
     }
 
     @objc private func togglePanel() {
-        if panel.isVisible { panel.orderOut(nil) } else { showPanel() }
+        if panel.isVisible { hidePanel() } else { showPanel() }
     }
 
     // MARK: Status item
@@ -345,9 +424,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.stack.badge.person.crop", accessibilityDescription: "GitHub Float")
         statusItem.button?.imagePosition = .imageLeading
-        let menu = NSMenu()
-        menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusMenu.delegate = self
+        statusItem.menu = settings.attached ? nil : statusMenu
     }
 
     private func updateStatusItem(mine: Int, reviewing: Int, open: Int, changed: Int, error: Bool) {
@@ -372,6 +453,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.addItem(.separator())
         }
         menu.addItem(item(panel.isVisible ? "Hide Panel" : "Show Panel", #selector(togglePanel), key: ""))
+        let attach = item("Attach to Menu Bar", #selector(toggleAttached), key: "")
+        attach.state = settings.attached ? .on : .off
+        attach.toolTip = "Click the menu bar icon to show or hide the panel right under it. Right-click the icon for this menu."
+        menu.addItem(attach)
         menu.addItem(item("Refresh Now", #selector(refreshNow), key: "r"))
         menu.addItem(item("Connect a Project…", #selector(configureProject), key: ","))
         if let url = store.projectURL { menu.addItem(item("Open Board", #selector(openBoard), key: "b", represented: url)) }
@@ -532,6 +617,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func toggleNotifications() { settings.notifications.toggle() }
+
+    @objc private func toggleAttached() { settings.attached.toggle() }
 
     @objc private func toggleAutoMove() { settings.autoMove.toggle() }
 

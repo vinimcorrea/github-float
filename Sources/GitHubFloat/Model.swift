@@ -274,6 +274,8 @@ final class Settings: ObservableObject {
     /// Move your own tasks to `mergedStatus` once all their PRs are merged, from any earlier column.
     @Published var autoMoveMerged: Bool { didSet { d.set(autoMoveMerged, forKey: "autoMoveMerged") } }
     @Published var mergedStatus: String { didSet { d.set(mergedStatus, forKey: "mergedStatus") } }
+    /// The panel hangs under the menu bar icon, which shows/hides it (right-click opens the menu).
+    @Published var attached: Bool { didSet { d.set(attached, forKey: "attached") } }
     /// The panel sits in the lower part of the screen: the header goes to the bottom and the list opens upwards.
     @Published var dockedBottom = false
     /// Runtime only: how much taller (+) or shorter (−) the list's content is than the space it gets.
@@ -311,6 +313,7 @@ final class Settings: ObservableObject {
         soundStyle = d.string(forKey: "soundStyle") ?? "synth"
         autoMove = d.bool(forKey: "autoMove")
         autoMoveMerged = d.bool(forKey: "autoMoveMerged")
+        attached = d.bool(forKey: "attached")
         mergedStatus = d.string(forKey: "mergedStatus") ?? "Ready to Verify"
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
