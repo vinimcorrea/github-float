@@ -282,6 +282,12 @@ actor GitHubClient {
         """, ["p": projectId, "i": itemId, "f": fieldId, "o": optionId])
     }
 
+    func closeIssue(_ issueId: String) async throws {
+        try await mutate("""
+        mutation($i:ID!) { closeIssue(input:{issueId:$i, stateReason:COMPLETED}) { clientMutationId } }
+        """, ["i": issueId])
+    }
+
     func addAssignee(_ userId: String, to assignableId: String) async throws {
         try await mutate("""
         mutation($a:ID!, $u:ID!) { addAssigneesToAssignable(input:{assignableId:$a, assigneeIds:[$u]}) { clientMutationId } }

@@ -188,6 +188,7 @@ struct BoardTask: Identifiable, Hashable {
     let issueType: String?
     let subIssueCount: Int
     let subIssues: [SubIssueRef]
+    let isOpenIssue: Bool
 
     struct SubIssueRef: Hashable {
         let closed: Bool
@@ -212,6 +213,7 @@ struct BoardTask: Identifiable, Hashable {
         assignees = people
         statusSince = item.status?.updatedAt.flatMap(parseISODate)
         issueType = c.issueType
+        isOpenIssue = c.typename == "Issue" && c.issueState == "OPEN"
         subIssueCount = c.subIssues?.totalCount ?? 0
         subIssues = (c.subIssues?.nodes ?? []).map { sub in
             let pairs = (sub.projectItems?.nodes ?? []).compactMap { $0 }.compactMap { p in p.status?.name.map { (p.project.id, $0) } }
@@ -476,7 +478,7 @@ final class Store: ObservableObject {
         defer { loading = false }
         do {
             let snap = try await client.fetchBoard(owner: settings.owner, number: settings.projectNumber,
-                                                   mineFilter: settings.mineFilter(extra: statusesBeforeMerged), openFilter: settings.openFilter)
+                                                   mineFilter: settings.mineFilter(extra: statusesBeforeMerged + (settings.autoMoveMerged ? [settings.mergedStatus] : [])), openFilter: settings.openFilter)
             apply(snap)
             failures = 0
             if error != nil { error = nil }
@@ -634,16 +636,24 @@ final class Store: ObservableObject {
             guard let pid = projectId, let status = sub.statuses[pid], let i = names.firstIndex(of: status) else { return false }
             return i >= targetIndex
         }
-        for t in stories where earlier.contains(t.status) || t.status == "No status" {
-            guard t.subIssues.count == t.subIssueCount, t.subIssues.allSatisfy(done) else { continue }
-            let key = "story:\(t.id)"
+        for t in stories {
+            guard t.subIssues.count == t.subIssueCount else { continue }
+            let allClosed = t.subIssues.allSatisfy(\.closed)
+            let shouldClose = allClosed && t.isOpenIssue && t.contentId != nil
+            let shouldMove = (earlier.contains(t.status) || t.status == "No status") && t.subIssues.allSatisfy(done)
+            guard shouldMove || (shouldClose && t.status == target.name) else { continue }
+            let key = (shouldMove ? "story:" : "story-close:") + t.id
             guard !handledVerdicts.contains(key) else { continue }
             handledVerdicts.insert(key)
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: targetId)
-                    if settings.notifications {
+                    if shouldMove {
+                        try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: targetId)
+                    }
+                    // Every sub-issue is closed, so the story itself is complete.
+                    if shouldClose, let issueId = t.contentId { try await client.closeIssue(issueId) }
+                    if shouldMove, settings.notifications {
                         Notifier.shared.post(.init(title: "Story done · \(t.repo.map { "\($0)#\(t.number ?? 0)" } ?? "Draft")",
                                                    body: "\(t.title)\nAll \(t.subIssueCount) sub-issues are done · Moved to \(target.name)",
                                                    url: t.url, id: "story-\(t.id)", kind: .good), sound: settings.soundOnChange)
