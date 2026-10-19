@@ -159,9 +159,13 @@ func parseISODate(_ s: String) -> Date? { isoFractional.date(from: s) ?? isoPlai
 extension PullRequest {
     /// Team convention: the task's other assignees are its reviewers, even when the PR has no review request.
     func withAssignedReviewers(_ assignees: [String]) -> PullRequest {
-        let extra = assignees.filter { $0 != author && !reviewers.map(\.login).contains($0) }
-        guard !extra.isEmpty else { return self }
         var pr = self
+        // A past review from someone no longer assigned (e.g. unassigned reviewer) doesn't count as in progress.
+        if pr.stage == .beingReviewed, !assignees.isEmpty, !assignees.contains(where: { $0 != author }) {
+            pr.stage = reviewers.contains { $0.state == "REQUESTED" } ? .awaitingReview : .noReviewers
+        }
+        let extra = assignees.filter { $0 != author && !reviewers.map(\.login).contains($0) }
+        guard !extra.isEmpty else { return pr }
         pr.reviewers += extra.map { ReviewerState(login: $0, state: "REQUESTED") }
         if pr.stage == .noReviewers { pr.stage = .awaitingReview }
         return pr
