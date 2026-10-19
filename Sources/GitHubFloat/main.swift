@@ -525,12 +525,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let wanted = settings.attached && panel.isVisible
         if wanted, outsideClickMonitor == nil {
             outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-                MainActor.assumeIsolated { self?.hidePanel() }
+                MainActor.assumeIsolated {
+                    guard let self, !self.isOwnClick(at: NSEvent.mouseLocation) else { return }
+                    self.hidePanel()
+                }
             }
         } else if !wanted, let monitor = outsideClickMonitor {
             NSEvent.removeMonitor(monitor)
             outsideClickMonitor = nil
         }
+    }
+
+    /// Clicks over the panel or the status icon can still reach other apps (e.g. through
+    /// the transparent arrow band or overlays near the menu bar); they must not hide it.
+    private func isOwnClick(at point: NSPoint) -> Bool {
+        if panel.frame.insetBy(dx: -4, dy: -4).contains(point) { return true }
+        if let button = statusItem.button, let window = button.window {
+            let rect = window.convertToScreen(button.convert(button.bounds, to: nil))
+            if rect.insetBy(dx: -2, dy: -2).contains(point) { return true }
+        }
+        return false
     }
 
     // MARK: Attached to the menu bar
