@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var updater = Updater.shared
     let showMenu: () -> Void
     let configure: () -> Void
+    var hide: () -> Void = {}
     /// Renders lists without ScrollView (used for static screenshots).
     var staticLayout = false
     @State private var dropTarget: String?
@@ -137,6 +138,8 @@ struct ContentView: View {
                         Circle().fill(Color.accentColor).frame(width: 6, height: 6).offset(x: 1, y: -1).allowsHitTesting(false)
                     }
                 }
+            iconButton("minus", help: "Hide (⌘W) · click the menu bar icon to show it again", action: hide)
+                .keyboardShortcut("w", modifiers: .command)
         }
         .padding(.horizontal, 12)
         .padding(.top, bottom && !settings.collapsed ? 6 : 10)

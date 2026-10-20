@@ -116,6 +116,7 @@ When you approve a task that is in the review status, GitHub Float moves it to t
 |---|---|
 | ⌘1 / ⌘2 / ⌘3 | Switch between *Mine*, *Reviewing* and *Needs reviewer* |
 | ⌘R | Refresh now |
+| ⌘W / `–` button | Hide the panel (click the menu bar icon to bring it back) |
 | ⌘, | Connect a project |
 | Click a row | Open the issue or PR in your browser |
 

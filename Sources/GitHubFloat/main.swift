@@ -204,7 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         let host = FirstClickHostingView(rootView: ContentView(store: store, settings: settings,
                                                          showMenu: { [weak self] in self?.popUpMenu() },
-                                                         configure: { [weak self] in self?.configureProject() }))
+                                                         configure: { [weak self] in self?.configureProject() },
+                                                         hide: { [weak self] in self?.hidePanel() }))
         host.sizingOptions = [] // the window decides its size; SwiftUI must not impose min/max constraints
         host.rowMenu = { [weak self] in self?.rowMenu(at: $0) }
         host.translatesAutoresizingMaskIntoConstraints = false
