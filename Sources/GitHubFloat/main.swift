@@ -412,7 +412,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// Bumped on every show/hide so a finished zoom-out never hides a panel that was reopened meanwhile.
     private var popoverGeneration = 0
-    private var popoverAnimating = false
+    private var popoverAnimatingSince: CFTimeInterval?
+    /// Expires on its own, so a lost animation callback can never leave the panel ignoring drags.
+    private var popoverAnimating: Bool {
+        get { popoverAnimatingSince.map { CACurrentMediaTime() - $0 < 1 } ?? false }
+        set { popoverAnimatingSince = newValue ? CACurrentMediaTime() : nil }
+    }
     private var popoverHiding = false
     private let popoverMinScale: CGFloat = 0.15
 
@@ -448,10 +453,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         anim.toValue = NSValue(caTransform3D: popoverTransform(scale))
         anim.fillMode = .forwards
         anim.isRemovedOnCompletion = false
+        var done = false
+        let finish = { if !done { done = true; completion() } }
         CATransaction.begin()
-        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { finish() } }
         layer.add(anim, forKey: "popover")
         CATransaction.commit()
+        // Watchdog: Core Animation may never report completion (e.g. window off screen or display asleep).
+        DispatchQueue.main.asyncAfter(deadline: .now() + anim.duration + 0.4) { finish() }
     }
 
     private func finishPopoverAnimation() {
@@ -459,6 +468,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         panel.hasShadow = true
         panel.invalidateShadow()
         popoverAnimating = false
+        if panel.isVisible, !popoverHiding { panel.alphaValue = settings.opacity }
     }
 
     private func showPanel() {
@@ -679,6 +689,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             if panel.isVisible { animateAttach() }
         } else {
             statusItem.button?.highlight(false)
+            popoverGeneration += 1
+            popoverHiding = false
+            finishPopoverAnimation()
             arrowTimer?.invalidate(); arrowTimer = nil; arrowGrow = 1
             arrowX = nil
             updateShape()
