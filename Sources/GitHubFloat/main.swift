@@ -127,6 +127,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             .store(in: &bag)
         settings.$collapsed.dropFirst().receive(on: RunLoop.main).sink { [weak self] in self?.applyCollapsed($0) }.store(in: &bag)
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.healCollapsedFrame() }
+            .store(in: &bag)
         // Next run loop turn (not a debounce): the resize lands right with the content change.
         settings.listOverflowChanged
             .receive(on: DispatchQueue.main)
@@ -461,6 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         popoverGeneration += 1
         popoverHiding = false
         statusItem?.button?.highlight(settings.attached)
+        healCollapsedFrame()
         guard settings.attached else {
             panel.alphaValue = settings.opacity
             panel.orderFrontRegardless()
@@ -605,6 +610,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func windowDidResize(_ notification: Notification) {
         if settings.attached, let mid = iconMidX() { arrowX = mid - panel.frame.minX }
         updateShape()
+        healCollapsedFrame()
+    }
+
+    /// Self-heal: an expanded panel must never be left at the collapsed height (e.g. after the system resizes it).
+    private func healCollapsedFrame() {
+        guard !settings.collapsed, !panel.inLiveResize, panel.frame.height < minExpandedHeight - 1 else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.settings.collapsed, self.panel.frame.height < self.minExpandedHeight - 1 else { return }
+            self.applyCollapsed(false)
+            if self.settings.attached, self.panel.isVisible { self.pinToStatusItem(expand: false) }
+        }
     }
 
     private func pinToStatusItem(expand: Bool = true) {
