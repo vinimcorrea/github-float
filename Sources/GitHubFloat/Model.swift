@@ -714,6 +714,34 @@ final class Store: ObservableObject {
         statusOptions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
+    /// Your own task with changes requested goes back to In Progress (Reviewed is only for approved work),
+    /// even if it sits in the review status or was moved to Reviewed by hand. Handled once per review.
+    private func applyChangesRequested(_ tasks: [BoardTask]) {
+        guard settings.autoMove, let board, let target = option(named: "In Progress"), let targetId = target.id else { return }
+        for t in tasks where [settings.reviewStatus, statusAfterReview].contains(t.status) {
+            let requests = t.prs.filter { $0.stage == .changesRequested }.flatMap(\.reviewers).filter { $0.state == "CHANGES_REQUESTED" }
+            guard let latest = requests.max(by: { ($0.submittedAt ?? .distantPast) < ($1.submittedAt ?? .distantPast) }) else { continue }
+            let key = "changes:\(t.id)@\(latest.submittedAt?.timeIntervalSince1970 ?? 0)"
+            guard !handledVerdicts.contains(key) else { continue }
+            handledVerdicts.insert(key)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await client.setStatus(projectId: board.projectId, itemId: t.id, fieldId: board.statusFieldId, optionId: targetId)
+                    if settings.notifications {
+                        Notifier.shared.post(.init(title: "Changes requested · \(t.repo.map { "\($0)#\(t.number ?? 0)" } ?? "Draft")",
+                                                   body: "\(t.title)\nMoved back to \(target.name)",
+                                                   url: t.prs.first?.url ?? t.url, id: "changes-\(t.id)", kind: .info), sound: false)
+                    }
+                } catch {
+                    handledVerdicts.remove(key)
+                    self.error = "Could not move \(t.title): \(error.localizedDescription)"
+                }
+                await self.refresh()
+            }
+        }
+    }
+
     /// Moves cards you just reviewed: approved -> the status after review, changes requested -> In Progress + unassign you.
     /// Only reviews submitted after the card entered the review status count, so older verdicts never move cards back.
     private func applyVerdicts(_ tasks: [BoardTask], viewer: String) {
@@ -767,6 +795,7 @@ final class Store: ObservableObject {
         let shown = settings.shownStatuses
         let assigned = shown.isEmpty ? fetched : fetched.filter { shown.contains($0.status) }
         applyVerdicts(assigned.filter { $0.isReviewing(by: snap.viewer) }, viewer: snap.viewer)
+        applyChangesRequested(assigned.filter { !$0.isReviewing(by: snap.viewer) })
         let newMine = assigned.filter { !$0.isReviewing(by: snap.viewer) && (settings.statuses.isEmpty || settings.statuses.contains($0.status)) }
         // Reviewing = others' work assigned to you, until you approve / request changes or its PRs are merged or closed.
         let newReviewing = assigned
