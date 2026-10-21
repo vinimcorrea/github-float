@@ -93,7 +93,7 @@ enum Screenshots {
         let rv = reviews.map { #"{"author":{"login":"\#($0.0)"},"state":"\#($0.1)"}"# }.joined(separator: ",")
         let rq = requested.map { #"{"requestedReviewer":{"login":"\#($0)"}}"# }.joined(separator: ",")
         let dec = decision.map { "\"\($0)\"" } ?? "null"
-        return #"{"number":\#(n),"title":"PR \#(n)","url":"https://github.com/acme/x/pull/\#(n)","state":"OPEN","isDraft":\#(draft),"reviewDecision":\#(dec),"author":{"login":"\#(author)"},"repository":{"name":"x"},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[\#(rq)]},"latestReviews":{"nodes":[\#(rv)]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"\#(checks)"}}}]}}"#
+        return #"{"id":"PR_\#(n)","number":\#(n),"title":"PR \#(n)","url":"https://github.com/acme/x/pull/\#(n)","state":"OPEN","isDraft":\#(draft),"reviewDecision":\#(dec),"author":{"login":"\#(author)"},"repository":{"name":"x"},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[\#(rq)]},"latestReviews":{"nodes":[\#(rv)]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"\#(checks)"}}}]}}"#
     }
 
     private static func item(_ id: String, repo: String, n: Int, title: String, status: String, hours: Double,

@@ -98,6 +98,7 @@ enum CheckState: String {
 
 struct PullRequest: Identifiable, Hashable {
     var id: String { url }
+    let nodeId: String?
     let number: Int
     let repo: String
     let title: String
@@ -107,11 +108,15 @@ struct PullRequest: Identifiable, Hashable {
     private(set) var reviewers: [ReviewerState]
     let checks: CheckState?
 
+    /// Reviewers whose "changes requested" review hasn't been re-requested yet.
+    var changesRequestedBy: [String] { reviewers.filter { $0.state == "CHANGES_REQUESTED" }.map(\.login) }
+
     static func isBot(_ login: String) -> Bool {
         login.hasSuffix("[bot]") || login.hasPrefix("copilot-")
     }
 
     init(_ n: PRNode) {
+        nodeId = n.id
         number = n.number
         repo = n.repository.name
         title = n.title
@@ -140,7 +145,8 @@ struct PullRequest: Identifiable, Hashable {
         else if n.state == "CLOSED" { stage = .closed }
         else if n.isDraft { stage = .draft }
         else if n.reviewDecision == "APPROVED" { stage = .approved }
-        else if n.reviewDecision == "CHANGES_REQUESTED" { stage = .changesRequested }
+        // Once every reviewer who requested changes has been asked again, it's back to waiting for them.
+        else if n.reviewDecision == "CHANGES_REQUESTED", byLogin.values.contains("CHANGES_REQUESTED") || requested.isEmpty { stage = .changesRequested }
         else if submitted { stage = .beingReviewed }
         else if !requested.isEmpty { stage = .awaitingReview }
         else { stage = .noReviewers }
@@ -395,6 +401,7 @@ final class Store: ObservableObject {
     @Published private(set) var changed: Set<String> = []
     /// Tasks being assigned to you right now (item ids).
     @Published private(set) var assigning: Set<String> = []
+    @Published private(set) var rerequesting: Set<String> = []
 
     let settings: Settings
     private let client = GitHubClient()
@@ -513,6 +520,42 @@ final class Store: ObservableObject {
             }
             await refresh()
             assigning.remove(task.id)
+        }
+    }
+
+    /// Your PRs on this task with requested changes, i.e. the ones you can send back to their reviewers.
+    func reReviewPRs(_ task: BoardTask) -> [PullRequest] {
+        task.prs.filter { $0.author == viewer && $0.stage == .changesRequested && $0.nodeId != nil && !$0.changesRequestedBy.isEmpty }
+    }
+
+    /// Notifies the reviewers who requested changes that the PR is ready for another look,
+    /// puts the card back in the review status and the reviewers back as assignees (team convention).
+    func requestReReview(_ task: BoardTask) {
+        let prs = reReviewPRs(task)
+        guard !prs.isEmpty, !rerequesting.contains(task.id) else { return }
+        let reviewers = Set(prs.flatMap(\.changesRequestedBy))
+        let reviewOption = task.status == settings.reviewStatus ? nil : option(named: settings.reviewStatus)
+        rerequesting.insert(task.id)
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                for pr in prs { try await client.requestReviews(pr.changesRequestedBy, on: pr.nodeId!) }
+                if let board, task.kind != "DraftIssue" {
+                    if let id = reviewOption?.id {
+                        try await client.setStatus(projectId: board.projectId, itemId: task.id, fieldId: board.statusFieldId, optionId: id)
+                    }
+                    if let content = task.contentId {
+                        for login in reviewers.subtracting(task.assignees).sorted() {
+                            if let uid = try await client.userId(login) { try await client.addAssignee(uid, to: content) }
+                        }
+                    }
+                }
+                error = nil
+            } catch {
+                self.error = "Could not re-request review on \(task.title): \(error.localizedDescription)"
+            }
+            await refresh()
+            rerequesting.remove(task.id)
         }
     }
 

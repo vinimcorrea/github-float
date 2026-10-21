@@ -248,6 +248,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.addItem(ActionMenuItem("Assign Me as Reviewer") { store.acknowledge(key); store.assignMe(task) })
             menu.addItem(.separator())
         }
+        if hit.tab == .mine, !store.reReviewPRs(task).isEmpty, !store.rerequesting.contains(task.id) {
+            let who = Set(store.reReviewPRs(task).flatMap(\.changesRequestedBy)).sorted().joined(separator: ", ")
+            menu.addItem(ActionMenuItem("Re-request Review from \(who)") { store.acknowledge(key); store.requestReReview(task) })
+            menu.addItem(.separator())
+        }
         if let url = task.url {
             menu.addItem(ActionMenuItem("Open \(task.kind == "PullRequest" ? "Pull Request" : "Issue")") { open(url) })
         }

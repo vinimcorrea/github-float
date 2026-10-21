@@ -328,6 +328,8 @@ struct ContentView: View {
                        isNew: store.changed.contains(key),
                        onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
                        assigning: store.assigning.contains(task.id),
+                       onReReview: tab == .mine && !store.reReviewPRs(task).isEmpty ? { store.requestReReview(task) } : nil,
+                       rerequesting: store.rerequesting.contains(task.id),
                        accent: accent(task, tab: tab)) { store.acknowledge(key) }
             .id(key + task.signature) // redraw when the card moves between sections
     }
@@ -460,6 +462,8 @@ struct TaskRow: View {
     let isNew: Bool
     var onAssign: (() -> Void)? = nil
     var assigning = false
+    var onReReview: (() -> Void)? = nil
+    var rerequesting = false
     /// Outlook-style colored bar on the card's leading edge (the task's status color).
     var accent: Color = .gray
     let onSeen: () -> Void
@@ -503,7 +507,8 @@ struct TaskRow: View {
                     Text(task.assignees.first ?? "Unassigned")
                     Spacer(minLength: 0)
                     if let onAssign {
-                        assignButton(onAssign)
+                        actionButton("person.crop.circle.badge.plus", "Assign me", busy: assigning ? "Assigning…" : nil,
+                                     help: "Add yourself as the reviewer (second assignee) of this task", onAssign)
                     } else {
                         Text("needs a reviewer").foregroundStyle(.orange)
                     }
@@ -518,6 +523,13 @@ struct TaskRow: View {
             }
             ForEach(task.prs) { pr in
                 PRLine(pr: pr, showRepo: pr.repo != task.repo)
+            }
+            if let onReReview {
+                HStack {
+                    Spacer(minLength: 0)
+                    actionButton("arrow.triangle.2.circlepath", "Re-request review", busy: rerequesting ? "Requesting…" : nil,
+                                 help: "Changes done? Notify the reviewers who requested changes to review again", onReReview)
+                }
             }
         }
         .padding(8)
@@ -545,24 +557,24 @@ struct TaskRow: View {
         .help(task.title)
     }
 
-    private func assignButton(_ action: @escaping () -> Void) -> some View {
+    private func actionButton(_ icon: String, _ title: String, busy: String?, help: String, _ action: @escaping () -> Void) -> some View {
         Button { onSeen(); action() } label: {
             HStack(spacing: 3) {
-                if assigning {
+                if busy != nil {
                     ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 10, height: 10)
                 } else {
-                    Image(systemName: "person.crop.circle.badge.plus").font(.system(size: 10))
+                    Image(systemName: icon).font(.system(size: 10))
                 }
-                Text(assigning ? "Assigning…" : "Assign me").font(.system(size: 10, weight: .semibold))
+                Text(busy ?? title).font(.system(size: 10, weight: .semibold))
             }
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .foregroundStyle(.white)
-            .background(Capsule().fill(Color.accentColor.opacity(assigning ? 0.5 : 0.9)))
+            .background(Capsule().fill(Color.accentColor.opacity(busy != nil ? 0.5 : 0.9)))
         }
         .buttonStyle(.plain)
-        .disabled(assigning)
-        .help("Add yourself as the reviewer (second assignee) of this task")
+        .disabled(busy != nil)
+        .help(help)
     }
 
     private var reviewingLine: some View {

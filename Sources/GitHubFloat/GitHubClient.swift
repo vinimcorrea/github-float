@@ -61,6 +61,7 @@ struct RepoNode: Decodable { let name: String }
 struct LoginNode: Decodable { let login: String }
 
 struct PRNode: Decodable {
+    let id: String?
     let number: Int
     let title: String
     let url: String
@@ -286,6 +287,19 @@ actor GitHubClient {
         try await mutate("""
         mutation($i:ID!) { closeIssue(input:{issueId:$i, stateReason:COMPLETED}) { clientMutationId } }
         """, ["i": issueId])
+    }
+
+    /// Asks reviewers again (e.g. after addressing their requested changes); keeps the other requests.
+    func requestReviews(_ logins: [String], on pullRequestId: String) async throws {
+        try await mutate("""
+        mutation($p:ID!, $u:[String!]) { requestReviewsByLogin(input:{pullRequestId:$p, userLogins:$u, union:true}) { clientMutationId } }
+        """, ["p": pullRequestId, "u": logins])
+    }
+
+    func userId(_ login: String) async throws -> String? {
+        struct R: Decodable { struct U: Decodable { let id: String }; struct D: Decodable { let user: U? }; let data: D? }
+        let data = try await post("query($l:String!) { user(login:$l) { id } }", ["l": login])
+        return try JSONDecoder().decode(R.self, from: data).data?.user?.id
     }
 
     func addAssignee(_ userId: String, to assignableId: String) async throws {
