@@ -714,6 +714,32 @@ final class Store: ObservableObject {
         statusOptions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
+    /// Someone approved a PR but forgot to assign themselves: they become the task's reviewer (second assignee),
+    /// so it leaves "Needs reviewer". Only for tasks with a single assignee (the developer).
+    private func applyApprovers(_ tasks: [BoardTask]) {
+        guard settings.autoMove, board != nil else { return }
+        for t in tasks where !t.isSplitStory && t.kind != "DraftIssue" && t.assignees.count == 1 {
+            guard let content = t.contentId else { continue }
+            let approvers = Set(t.prs.filter { $0.stage != .closed }.flatMap(\.reviewers)
+                .filter { $0.state == "APPROVED" && !t.assignees.contains($0.login) }.map(\.login))
+            guard let approver = approvers.sorted().first else { continue }
+            let key = "approver:\(t.id)@\(approver)"
+            guard !handledVerdicts.contains(key) else { continue }
+            handledVerdicts.insert(key)
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    guard let uid = try await client.userId(approver) else { return }
+                    try await client.addAssignee(uid, to: content)
+                } catch {
+                    handledVerdicts.remove(key)
+                    self.error = "Could not assign \(approver) to \(t.title): \(error.localizedDescription)"
+                }
+                await self.refresh()
+            }
+        }
+    }
+
     /// Your own task with changes requested goes back to In Progress (Reviewed is only for approved work),
     /// even if it sits in the review status or was moved to Reviewed by hand. Handled once per review.
     private func applyChangesRequested(_ tasks: [BoardTask]) {
@@ -796,6 +822,7 @@ final class Store: ObservableObject {
         let assigned = shown.isEmpty ? fetched : fetched.filter { shown.contains($0.status) }
         applyVerdicts(assigned.filter { $0.isReviewing(by: snap.viewer) }, viewer: snap.viewer)
         applyChangesRequested(assigned.filter { !$0.isReviewing(by: snap.viewer) })
+        applyApprovers(fetched + snap.open.compactMap(BoardTask.init))
         let newMine = assigned.filter { !$0.isReviewing(by: snap.viewer) && (settings.statuses.isEmpty || settings.statuses.contains($0.status)) }
         // Reviewing = others' work assigned to you, until you approve / request changes or its PRs are merged or closed.
         let newReviewing = assigned

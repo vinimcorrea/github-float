@@ -825,7 +825,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         let autoMove = item("Move Cards After My Review", #selector(toggleAutoMove), key: "")
         autoMove.state = settings.autoMove ? .on : .off
-        autoMove.toolTip = "Approve → next status after review. Request changes → In Progress and you're unassigned. Your own tasks with changes requested also go back to In Progress."
+        autoMove.toolTip = "Approve → next status after review. Request changes → In Progress and you're unassigned. Your own tasks with changes requested also go back to In Progress. Whoever approves a task with no reviewer is assigned as its reviewer."
         menu.addItem(autoMove)
         let autoMerged = item("Move My Merged Tasks to \(settings.mergedStatus)", #selector(toggleAutoMoveMerged), key: "")
         autoMerged.state = settings.autoMoveMerged ? .on : .off
