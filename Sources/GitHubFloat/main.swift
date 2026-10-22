@@ -487,7 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             updateOutsideClickMonitor()
             return
         }
-        pinToStatusItem()
+        pinToStatusItem(follow: true)
         if !panel.isVisible || popoverAnimating {
             // Popover-style entrance: grows out of the menu bar icon.
             let wasHidden = !panel.isVisible
@@ -547,7 +547,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if wanted, outsideClickMonitor == nil {
             outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    guard let self, !self.isOwnClick(at: NSEvent.mouseLocation) else { return }
+                    let point = NSEvent.mouseLocation
+                    // Working on another display leaves the panel where it is.
+                    guard let self, !self.isOwnClick(at: point), self.screenOfPanel?.frame.contains(point) ?? true else { return }
                     self.hidePanel()
                 }
             }
@@ -638,7 +640,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    private func pinToStatusItem(expand: Bool = true) {
+    private var iconScreen: NSScreen? {
+        guard let window = statusItem?.button?.window else { return nil }
+        return window.screen ?? NSScreen.screens.first { $0.frame.intersects(window.frame) }
+    }
+
+    /// With several displays the menu bar icon jumps to the display you're using; the panel only follows it when you click the icon.
+    private var panelOnIconScreen: Bool {
+        guard NSScreen.screens.count > 1, panel.isVisible, let icon = iconScreen, let mine = screenOfPanel else { return true }
+        return icon == mine
+    }
+
+    private func pinToStatusItem(expand: Bool = true, follow: Bool = false) {
+        guard follow || panelOnIconScreen else { return }
         if expand, settings.collapsed { settings.collapsed = false }
         defer { arrowX = iconMidX().map { $0 - panel.frame.minX }; updateShape() }
         guard let f = pinnedFrame(), f != panel.frame else { return }
@@ -721,7 +735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func togglePanel() {
-        if panel.isVisible { hidePanel() } else { showPanel() }
+        if panel.isVisible, panelOnIconScreen { hidePanel() } else { showPanel() }
     }
 
     // MARK: Status item
