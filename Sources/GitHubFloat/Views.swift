@@ -148,6 +148,14 @@ struct ContentView: View {
         .contentShape(Rectangle())
     }
 
+    private func count(_ n: Int, _ icon: String, _ help: String) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: icon)
+            Text("\(n)").monospacedDigit()
+        }
+        .help(help)
+    }
+
     private var subtitle: some View {
         HStack(spacing: 4) {
             if let error = store.error {
@@ -157,9 +165,13 @@ struct ContentView: View {
                 Text("No project connected")
             } else if let last = store.lastUpdated {
                 if settings.collapsed {
-                    Label("\(store.mine.count)", systemImage: "person.fill").help("Mine")
-                    Label("\(store.reviewing.count)", systemImage: "eye").help("Reviewing")
-                    Label("\(store.open.count)", systemImage: "person.badge.plus").help("Needs reviewer")
+                    HStack(spacing: 8) {
+                        count(store.mine.count, "person.fill", "Mine")
+                        count(store.reviewing.count, "eye", "Reviewing")
+                        count(store.open.count, "person.badge.plus", "Needs reviewer")
+                    }
+                    .fixedSize()
+                    .layoutPriority(1)
                     Text("·")
                 }
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
@@ -176,10 +188,12 @@ struct ContentView: View {
 
     private func updatedText(_ date: Date) -> String {
         let s = Int(Date().timeIntervalSince(date))
+        // The collapsed bar shares the line with the counts, so it only shows the age.
+        let short = settings.collapsed
         switch s {
-        case ..<30: return "updated just now"
-        case ..<3600: return "updated \(max(1, s / 60))m ago"
-        default: return "updated \(s / 3600)h ago"
+        case ..<30: return short ? "now" : "updated just now"
+        case ..<3600: return short ? "\(max(1, s / 60))m ago" : "updated \(max(1, s / 60))m ago"
+        default: return short ? "\(s / 3600)h ago" : "updated \(s / 3600)h ago"
         }
     }
 
@@ -313,7 +327,7 @@ struct ContentView: View {
         } else {
             scroller {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Others' tasks in \(settings.reviewStatus) without a reviewer assigned · longest waiting first")
+                    Text("No reviewer yet, longest waiting first")
                         .font(.system(size: 10))
                         .foregroundStyle(.tertiary)
                         .padding(.top, 2)
@@ -552,7 +566,8 @@ struct TaskRow: View {
                     .font(.system(size: 10)).foregroundStyle(.tertiary)
             }
             ForEach(task.prs) { pr in
-                PRLine(pr: pr, showRepo: pr.repo != task.repo)
+                // In Reviewing the line above already says where you stand.
+                PRLine(pr: pr, showRepo: pr.repo != task.repo, hiding: tab == .reviewing ? viewer : nil)
             }
             if let onReReview {
                 HStack {
@@ -654,6 +669,7 @@ struct TaskRow: View {
 struct PRLine: View {
     let pr: PullRequest
     let showRepo: Bool
+    var hiding: String? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -684,16 +700,18 @@ struct PRLine: View {
     }
 
     private var reviewers: some View {
-        HStack(spacing: 4) {
-            ForEach(pr.reviewers.prefix(3), id: \.self) { r in
+        let shown = pr.reviewers.filter { $0.login != hiding }
+        return HStack(spacing: 4) {
+            ForEach(shown.prefix(3), id: \.self) { r in
                 HStack(spacing: 2) {
                     Image(systemName: r.symbol).foregroundStyle(r.color)
-                    Text(r.login).lineLimit(1).truncationMode(.tail).frame(maxWidth: 64, alignment: .leading)
+                    // Long logins are cut, short ones keep their own width so the group hugs the right edge.
+                    Text(r.login.count > 12 ? r.login.prefix(11) + "…" : r.login).lineLimit(1).fixedSize()
                 }
                 .help("\(r.login): \(r.state.replacingOccurrences(of: "_", with: " ").lowercased())")
             }
-            if pr.reviewers.count > 3 {
-                Text("+\(pr.reviewers.count - 3)")
+            if shown.count > 3 {
+                Text("+\(shown.count - 3)")
             }
         }
         .font(.system(size: 9))
