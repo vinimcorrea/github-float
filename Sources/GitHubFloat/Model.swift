@@ -669,6 +669,13 @@ final class Store: ObservableObject {
     /// Statuses worth a notification when your task enters them: the one right after the review status (e.g. "Reviewed").
     private var notifyStatuses: Set<String> { [statusAfterReview] }
 
+    /// True for columns left of the review status (e.g. In Progress), where a PR isn't waiting for review yet.
+    func isBeforeReview(_ status: String) -> Bool {
+        let names = statusOptions.isEmpty ? settings.statuses : statusOptions.map(\.name)
+        guard let s = names.firstIndex(of: status), let r = names.firstIndex(of: settings.reviewStatus) else { return false }
+        return s < r
+    }
+
     private var statusAfterReview: String {
         let names = statusOptions.map(\.name)
         guard let i = names.firstIndex(of: settings.reviewStatus), i + 1 < names.count else { return "Reviewed" }

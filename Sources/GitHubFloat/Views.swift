@@ -375,6 +375,7 @@ struct ContentView: View {
                        viewer: store.viewer,
                        tab: tab,
                        isNew: store.changed.contains(key),
+                       beforeReview: store.isBeforeReview(task.status),
                        onAssign: tab == .open && (staticLayout || store.canAssignMe(task)) ? { store.assignMe(task) } : nil,
                        assigning: store.assigning.contains(task.id),
                        onReReview: tab == .mine && !store.reReviewPRs(task).isEmpty ? { store.requestReReview(task) } : nil,
@@ -512,6 +513,7 @@ struct TaskRow: View {
     let viewer: String
     let tab: Tab
     let isNew: Bool
+    var beforeReview = false
     var onAssign: (() -> Void)? = nil
     var assigning = false
     var onReReview: (() -> Void)? = nil
@@ -575,7 +577,7 @@ struct TaskRow: View {
             }
             ForEach(task.prs) { pr in
                 // In Reviewing the line above already says where you stand.
-                PRLine(pr: pr, showRepo: pr.repo != task.repo, hiding: tab == .reviewing ? viewer : nil)
+                PRLine(pr: pr, showRepo: pr.repo != task.repo, hiding: tab == .reviewing ? viewer : nil, beforeReview: beforeReview)
             }
             if let onReReview {
                 HStack {
@@ -678,17 +680,26 @@ struct PRLine: View {
     let pr: PullRequest
     let showRepo: Bool
     var hiding: String? = nil
+    var beforeReview = false
+
+    /// Before the review column nobody is expected to review yet, so review-waiting stages read as a plain open PR.
+    private var chip: (label: String, symbol: String, color: Color) {
+        if beforeReview, [.awaitingReview, .noReviewers].contains(pr.stage) {
+            return ("Open", "arrow.triangle.pull", .green)
+        }
+        return (pr.stage.label, pr.stage.symbol, pr.stage.color)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
             HStack(spacing: 3) {
-                Image(systemName: pr.stage.symbol)
-                Text(pr.stage.label)
+                Image(systemName: chip.symbol)
+                Text(chip.label)
             }
             .font(.system(size: 10, weight: .semibold))
             .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Capsule().fill(pr.stage.color.opacity(0.18)))
-            .foregroundStyle(pr.stage.color)
+            .background(Capsule().fill(chip.color.opacity(0.18)))
+            .foregroundStyle(chip.color)
             .fixedSize()
 
             Text(showRepo ? "\(pr.repo)#\(pr.number)" : "PR #\(pr.number)")
