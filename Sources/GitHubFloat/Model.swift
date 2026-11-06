@@ -54,6 +54,8 @@ struct ReviewerState: Hashable {
     /// APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED or REQUESTED
     let state: String
     var submittedAt: Date?
+    /// A review requested from a team rather than a person.
+    var isTeam = false
 
     var symbol: String {
         switch state {
@@ -133,12 +135,14 @@ struct PullRequest: Identifiable, Hashable {
             byLogin[login] = r.state
             at[login] = r.submittedAt.flatMap(parseISODate)
         }
-        let requested = n.reviewRequests?.nodes?.compactMap { $0?.requestedReviewer.flatMap { $0.login ?? $0.name } } ?? []
+        let requestedNodes = n.reviewRequests?.nodes?.compactMap { $0?.requestedReviewer } ?? []
+        let teams = Set(requestedNodes.filter { $0.login == nil }.compactMap(\.name))
+        let requested = requestedNodes.compactMap { $0.login ?? $0.name }
         for login in requested {
             if byLogin[login] == nil { order.append(login) }
             byLogin[login] = "REQUESTED" // re-requested reviews are waiting again
         }
-        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!, submittedAt: at[$0]) }
+        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!, submittedAt: at[$0], isTeam: teams.contains($0)) }
 
         let submitted = byLogin.values.contains { $0 != "REQUESTED" && $0 != "DISMISSED" }
         if n.state == "MERGED" { stage = .merged }
@@ -315,6 +319,8 @@ final class Settings: ObservableObject {
     /// Folded sections, keyed by "<tab>:<title>".
     /// People whose tasks you don't review (e.g. another team): their "Needs reviewer" tasks go to a folded Archived section.
     @Published var archivedPeople: [String] { didSet { d.set(archivedPeople, forKey: "archivedPeople") } }
+    /// Emoji shown at the left of the header instead of the app mark; empty means the app mark.
+    @Published var headerEmoji: String { didSet { d.set(headerEmoji, forKey: "headerEmoji") } }
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
     private init() {
@@ -352,6 +358,7 @@ final class Settings: ObservableObject {
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
         archivedPeople = d.stringArray(forKey: "archivedPeople") ?? []
+        headerEmoji = d.string(forKey: "headerEmoji") ?? ""
     }
 
     var isConfigured: Bool { !owner.isEmpty && projectNumber > 0 }

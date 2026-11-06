@@ -61,7 +61,7 @@ enum Screenshots {
             item("i-web142", repo: "web-app", n: 142, title: "Add dark mode toggle to settings", status: "In Progress",
                  hours: 5, assignees: ["you"], pr: pr(201, draft: true, checks: "PENDING")),
             item("i-api311", repo: "api", n: 311, title: "Rate-limit the public search endpoint", status: "In Review",
-                 hours: 3, assignees: ["you"], pr: pr(318, requested: ["bob"], checks: "PENDING")),
+                 hours: 3, assignees: ["you"], pr: pr(318, requested: ["bob", "team-platform-reviewers"], checks: "PENDING")),
             item("i-web138", repo: "web-app", n: 138, title: "Migrate sign-in to the OAuth device flow", status: "In Review",
                  hours: 30, assignees: ["you", "carol"], pr: pr(139, reviews: [("carol", "CHANGES_REQUESTED")], decision: "CHANGES_REQUESTED", checks: "FAILURE")),
             item("i-ds77", repo: "design-system", n: 77, title: "Ship the accessible tooltip component", status: "In Review",
@@ -92,7 +92,7 @@ enum Screenshots {
     private static func pr(_ n: Int, author: String = "you", draft: Bool = false, requested: [String] = [], reviews: [(String, String)] = [],
                            decision: String? = nil, checks: String) -> String {
         let rv = reviews.map { #"{"author":{"login":"\#($0.0)"},"state":"\#($0.1)"}"# }.joined(separator: ",")
-        let rq = requested.map { #"{"requestedReviewer":{"login":"\#($0)"}}"# }.joined(separator: ",")
+        let rq = requested.map { $0.hasPrefix("team-") ? #"{"requestedReviewer":{"name":"\#($0)"}}"# : #"{"requestedReviewer":{"login":"\#($0)"}}"# }.joined(separator: ",")
         let dec = decision.map { "\"\($0)\"" } ?? "null"
         return #"{"id":"PR_\#(n)","number":\#(n),"title":"PR \#(n)","url":"https://github.com/acme/x/pull/\#(n)","state":"OPEN","isDraft":\#(draft),"reviewDecision":\#(dec),"author":{"login":"\#(author)"},"repository":{"name":"x"},"assignees":{"nodes":[]},"reviewRequests":{"nodes":[\#(rq)]},"latestReviews":{"nodes":[\#(rv)]},"commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"\#(checks)"}}}]}}"#
     }

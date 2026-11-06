@@ -99,10 +99,18 @@ struct ContentView: View {
 
     // MARK: Header
 
-    private var header: some View {
-        HStack(spacing: 8) {
+    @ViewBuilder private var headerIcon: some View {
+        if settings.headerEmoji.isEmpty {
             Image(nsImage: AppMark.image(size: 16))
                 .renderingMode(.template).foregroundStyle(Color(red: 0.55, green: 0.42, blue: 1.0))
+        } else {
+            Text(settings.headerEmoji).font(.system(size: 15)).frame(width: 18, height: 16).fixedSize()
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            headerIcon
             VStack(alignment: .leading, spacing: 1) {
                 Text(settings.isConfigured ? store.projectTitle : "GitHub Float").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 subtitle
@@ -687,11 +695,13 @@ struct PRLine: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(1)
 
             if let checks = pr.checks {
                 Circle().fill(checks.color).frame(width: 6, height: 6).help(checks.help)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
             reviewers
         }
         .contentShape(Rectangle())
@@ -699,19 +709,30 @@ struct PRLine: View {
         .help(pr.title)
     }
 
+    /// People first (up to two), then requested teams folded into one chip, so team names never crowd the line.
     private var reviewers: some View {
         let shown = pr.reviewers.filter { $0.login != hiding }
-        return HStack(spacing: 4) {
-            ForEach(shown.prefix(3), id: \.self) { r in
+        let people = shown.filter { !$0.isTeam }
+        let teams = shown.filter(\.isTeam)
+        return HStack(spacing: 5) {
+            ForEach(people.prefix(2), id: \.self) { r in
                 HStack(spacing: 2) {
                     Image(systemName: r.symbol).foregroundStyle(r.color)
-                    // Long logins are cut, short ones keep their own width so the group hugs the right edge.
                     Text(r.login.count > 12 ? r.login.prefix(11) + "…" : r.login).lineLimit(1).fixedSize()
                 }
                 .help("\(r.login): \(r.state.replacingOccurrences(of: "_", with: " ").lowercased())")
             }
-            if shown.count > 3 {
-                Text("+\(shown.count - 3)")
+            if people.count > 2 {
+                Text("+\(people.count - 2)").fixedSize()
+                    .help(people.dropFirst(2).map(\.login).joined(separator: ", "))
+            }
+            if !teams.isEmpty {
+                HStack(spacing: 2) {
+                    Image(systemName: "person.2.fill").foregroundStyle(.orange)
+                    if teams.count > 1 { Text("\(teams.count)").monospacedDigit() }
+                }
+                .fixedSize()
+                .help("Requested from team\(teams.count > 1 ? "s" : ""): " + teams.map(\.login).joined(separator: ", "))
             }
         }
         .font(.system(size: 9))

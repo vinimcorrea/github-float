@@ -823,6 +823,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         menu.addItem(submenu("Opacity", opacityMenu))
 
+        let iconMenu = NSMenu()
+        for (title, emoji) in [("App Mark", ""), ("🚀", "🚀"), ("👀", "👀"), ("🔥", "🔥"), ("✅", "✅"), ("🐙", "🐙"), ("⚡️", "⚡️")] {
+            let i = ActionMenuItem(title) { [settings] in settings.headerEmoji = emoji }
+            i.state = settings.headerEmoji == emoji ? .on : .off
+            iconMenu.addItem(i)
+        }
+        iconMenu.addItem(.separator())
+        let custom = ActionMenuItem("Custom Emoji…") { [weak self] in self?.chooseHeaderEmoji() }
+        if !settings.headerEmoji.isEmpty, !["🚀", "👀", "🔥", "✅", "🐙", "⚡️"].contains(settings.headerEmoji) {
+            custom.title = "Custom Emoji: \(settings.headerEmoji)…"
+            custom.state = .on
+        }
+        iconMenu.addItem(custom)
+        menu.addItem(submenu("Header Icon", iconMenu))
+
         let notify = item("Notifications", #selector(toggleNotifications), key: "")
         notify.state = settings.notifications ? .on : .off
         menu.addItem(notify)
@@ -913,6 +928,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             }
             alert.informativeText = "⚠️ That doesn't look like a GitHub Project URL.\nExpected https://github.com/orgs/<org>/projects/<number> or /users/<user>/projects/<number>."
         }
+    }
+
+    private func chooseHeaderEmoji() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Header Icon"
+        alert.informativeText = "Type or pick an emoji (⌃⌘Space). Leave empty for the app mark."
+        alert.icon = NSApp.applicationIconImage
+        let field = EditableTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        field.isEditable = true
+        field.isSelectable = true
+        field.stringValue = settings.headerEmoji
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Use")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+        RunLoop.main.perform(inModes: [.modalPanel]) { NSApp.orderFrontCharacterPalette(nil) }
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // One symbol is enough for a 16 pt slot; keep the first grapheme (emoji with modifiers stay whole).
+        settings.headerEmoji = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).first.map(String.init) ?? ""
     }
 
     @objc private func refreshNow() { Task { await store.refresh() } }
