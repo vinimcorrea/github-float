@@ -292,7 +292,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var openList: some View {
-        if store.open.isEmpty {
+        if store.open.isEmpty && store.archivedOpen.isEmpty {
             empty(icon: "checkmark.circle", text: "Every task in \(settings.reviewStatus) has a reviewer")
         } else {
             scroller {
@@ -303,6 +303,17 @@ struct ContentView: View {
                         .padding(.top, 2)
                     ForEach(store.open) { task in
                         row(task, tab: .open)
+                    }
+                    if store.open.isEmpty {
+                        Text("Nothing to review here, only archived people's tasks.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary).padding(.vertical, 6)
+                    }
+                    if !store.archivedOpen.isEmpty {
+                        foldableHeader(archivedTitle, tab: .open, tasks: store.archivedOpen, color: .gray)
+                            .help("Tasks of people you archived (right-click a task → Archive). Right-click to unarchive.")
+                        if !isFolded(.open, archivedTitle) {
+                            ForEach(store.archivedOpen) { row($0, tab: .open).opacity(0.6) }
+                        }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -361,8 +372,11 @@ struct ContentView: View {
 
     private func foldKey(_ tab: Tab, _ title: String) -> String { "\(tab.rawValue):\(title)" }
 
+    private let archivedTitle = "Archived"
+
     private func isFolded(_ tab: Tab, _ title: String) -> Bool {
-        settings.collapsedSections.contains(foldKey(tab, title))
+        // The archived section starts folded: there the key means "unfolded".
+        settings.collapsedSections.contains(foldKey(tab, title)) != (tab == .open && title == archivedTitle)
     }
 
     private func toggleFold(_ tab: Tab, _ title: String) {

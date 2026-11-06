@@ -313,6 +313,8 @@ final class Settings: ObservableObject {
     var listOverflow: CGFloat = 0 { didSet { if listOverflow != oldValue { listOverflowChanged.send(listOverflow) } } }
     let listOverflowChanged = PassthroughSubject<CGFloat, Never>()
     /// Folded sections, keyed by "<tab>:<title>".
+    /// People whose tasks you don't review (e.g. another team): their "Needs reviewer" tasks go to a folded Archived section.
+    @Published var archivedPeople: [String] { didSet { d.set(archivedPeople, forKey: "archivedPeople") } }
     @Published var collapsedSections: Set<String> { didSet { d.set(Array(collapsedSections), forKey: "collapsedSections") } }
 
     private init() {
@@ -349,6 +351,7 @@ final class Settings: ObservableObject {
         mergedStatus = d.string(forKey: "mergedStatus") ?? "Ready to Verify"
         sectionOrder = d.stringArray(forKey: "sectionOrder") ?? []
         collapsedSections = Set(d.stringArray(forKey: "collapsedSections") ?? [])
+        archivedPeople = d.stringArray(forKey: "archivedPeople") ?? []
     }
 
     var isConfigured: Bool { !owner.isEmpty && projectNumber > 0 }
@@ -391,6 +394,9 @@ final class Store: ObservableObject {
     @Published private(set) var mine: [BoardTask] = []
     @Published private(set) var reviewing: [BoardTask] = []
     @Published private(set) var open: [BoardTask] = []
+    /// "Needs reviewer" tasks of archived people: no badge count, no notifications.
+    @Published private(set) var archivedOpen: [BoardTask] = []
+    private var allOpen: [BoardTask] = []
     @Published private(set) var viewer = ""
     @Published private(set) var statusOptions: [StatusOption] = []
     @Published private(set) var projectTitle = "GitHub Project"
@@ -593,8 +599,40 @@ final class Store: ObservableObject {
         switch tab {
         case .mine: mine.first { $0.id == id }
         case .reviewing: reviewing.first { $0.id == id }
-        case .open: open.first { $0.id == id }
+        case .open: (open + archivedOpen).first { $0.id == id }
         }
+    }
+
+    /// Whose task it is: the developer (first assignee), else the PR author.
+    func owner(of task: BoardTask) -> String? {
+        task.assignees.first ?? task.prs.compactMap(\.author).first
+    }
+
+    func isArchived(_ task: BoardTask) -> Bool {
+        owner(of: task).map(settings.archivedPeople.contains) ?? false
+    }
+
+    func setArchived(_ login: String, _ archived: Bool) {
+        var people = settings.archivedPeople.filter { $0 != login }
+        if archived { people.append(login) }
+        settings.archivedPeople = people.sorted { $0.lowercased() < $1.lowercased() }
+        splitOpen()
+    }
+
+    /// Re-splits without a fetch; unarchived tasks count as already seen, so they don't notify as new.
+    private func splitOpen() {
+        let shown = allOpen.filter { !isArchived($0) }
+        archivedOpen = allOpen.filter(isArchived)
+        guard shown != open else { return }
+        previousOpen = Dictionary(shown.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        if var sigs = signatures {
+            sigs = sigs.filter { !$0.key.hasPrefix("\(Tab.open.rawValue):") }
+            for t in shown { sigs[key(.open, t)] = t.signature }
+            signatures = sigs
+        }
+        let shownKeys = Set(shown.map { key(.open, $0) })
+        changed = changed.filter { !$0.hasPrefix("\(Tab.open.rawValue):") || shownKeys.contains($0) }
+        open = shown
     }
 
     /// "Mine" grouped by status, in board order.
@@ -834,9 +872,12 @@ final class Store: ObservableObject {
                 return ($0.statusSince ?? .distantFuture) < ($1.statusSince ?? .distantFuture)
             }
         // Open for review = in the review status with no second (reviewer) assignee.
-        let newOpen = snap.open.compactMap(BoardTask.init)
+        allOpen = snap.open.compactMap(BoardTask.init)
             .filter { !$0.isSplitStory && $0.assignees.count < 2 && !$0.assignees.contains(snap.viewer) }
             .sorted { ($0.statusSince ?? .distantFuture) < ($1.statusSince ?? .distantFuture) }
+        let newArchived = allOpen.filter(isArchived)
+        if archivedOpen != newArchived { archivedOpen = newArchived }
+        let newOpen = allOpen.filter { !isArchived($0) }
 
         var newSigs: [String: String] = [:]
         for t in newMine { newSigs[key(.mine, t)] = t.signature }

@@ -253,6 +253,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.addItem(ActionMenuItem("Re-request Review from \(who)") { store.acknowledge(key); store.requestReReview(task) })
             menu.addItem(.separator())
         }
+        if hit.tab == .open, let owner = store.owner(of: task) {
+            let archived = store.isArchived(task)
+            menu.addItem(ActionMenuItem(archived ? "Unarchive \(owner)'s Tasks" : "Archive \(owner)'s Tasks") { store.setArchived(owner, !archived) })
+            menu.addItem(.separator())
+        }
         if let url = task.url {
             menu.addItem(ActionMenuItem("Open \(task.kind == "PullRequest" ? "Pull Request" : "Issue")") { open(url) })
         }
@@ -831,6 +836,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         autoMerged.state = settings.autoMoveMerged ? .on : .off
         autoMerged.toolTip = "When all PRs of a task of yours are merged, move it to \(settings.mergedStatus) from any earlier column. Same for a User Story once all its sub-issues are closed or in \(settings.mergedStatus) (or later)."
         menu.addItem(autoMerged)
+
+        if !settings.archivedPeople.isEmpty {
+            let archived = NSMenu()
+            for login in settings.archivedPeople {
+                archived.addItem(ActionMenuItem("Unarchive \(login)") { [store] in store.setArchived(login, false) })
+            }
+            menu.addItem(submenu("Archived People", archived))
+        }
 
         let soundMenu = NSMenu()
         for (title, style) in [("GitHub Float Synth", "synth"), ("macOS Default", "system"), ("Off", "off")] {

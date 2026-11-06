@@ -17,6 +17,7 @@ enum Screenshots {
         settings.reviewStatus = "In Review"
         settings.sectionOrder = []
         settings.collapsedSections = []
+        settings.archivedPeople = ["erin"]
         let store = Store(settings: settings)
         store.loadDemo(demoSnapshot(), changed: ["mine:i-ds77"])
 
