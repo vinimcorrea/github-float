@@ -54,8 +54,6 @@ struct ReviewerState: Hashable {
     /// APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED or REQUESTED
     let state: String
     var submittedAt: Date?
-    /// A review requested from a team rather than a person.
-    var isTeam = false
 
     var symbol: String {
         switch state {
@@ -135,14 +133,13 @@ struct PullRequest: Identifiable, Hashable {
             byLogin[login] = r.state
             at[login] = r.submittedAt.flatMap(parseISODate)
         }
-        let requestedNodes = n.reviewRequests?.nodes?.compactMap { $0?.requestedReviewer } ?? []
-        let teams = Set(requestedNodes.filter { $0.login == nil }.compactMap(\.name))
-        let requested = requestedNodes.compactMap { $0.login ?? $0.name }
+        // Team requests are added automatically (CODEOWNERS) and mean nobody has picked the review yet, so only people count.
+        let requested = n.reviewRequests?.nodes?.compactMap { $0?.requestedReviewer?.login } ?? []
         for login in requested {
             if byLogin[login] == nil { order.append(login) }
             byLogin[login] = "REQUESTED" // re-requested reviews are waiting again
         }
-        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!, submittedAt: at[$0], isTeam: teams.contains($0)) }
+        reviewers = order.map { ReviewerState(login: $0, state: byLogin[$0]!, submittedAt: at[$0]) }
 
         let submitted = byLogin.values.contains { $0 != "REQUESTED" && $0 != "DISMISSED" }
         if n.state == "MERGED" { stage = .merged }

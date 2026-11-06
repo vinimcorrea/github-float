@@ -709,30 +709,19 @@ struct PRLine: View {
         .help(pr.title)
     }
 
-    /// People first (up to two), then requested teams folded into one chip, so team names never crowd the line.
     private var reviewers: some View {
         let shown = pr.reviewers.filter { $0.login != hiding }
-        let people = shown.filter { !$0.isTeam }
-        let teams = shown.filter(\.isTeam)
         return HStack(spacing: 5) {
-            ForEach(people.prefix(2), id: \.self) { r in
+            ForEach(shown.prefix(2), id: \.self) { r in
                 HStack(spacing: 2) {
                     Image(systemName: r.symbol).foregroundStyle(r.color)
                     Text(r.login.count > 12 ? r.login.prefix(11) + "…" : r.login).lineLimit(1).fixedSize()
                 }
                 .help("\(r.login): \(r.state.replacingOccurrences(of: "_", with: " ").lowercased())")
             }
-            if people.count > 2 {
-                Text("+\(people.count - 2)").fixedSize()
-                    .help(people.dropFirst(2).map(\.login).joined(separator: ", "))
-            }
-            if !teams.isEmpty {
-                HStack(spacing: 2) {
-                    Image(systemName: "person.2.fill").foregroundStyle(.orange)
-                    if teams.count > 1 { Text("\(teams.count)").monospacedDigit() }
-                }
-                .fixedSize()
-                .help("Requested from team\(teams.count > 1 ? "s" : ""): " + teams.map(\.login).joined(separator: ", "))
+            if shown.count > 2 {
+                Text("+\(shown.count - 2)").fixedSize()
+                    .help(shown.dropFirst(2).map(\.login).joined(separator: ", "))
             }
         }
         .font(.system(size: 9))
