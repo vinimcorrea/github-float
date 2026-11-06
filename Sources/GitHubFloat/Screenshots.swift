@@ -35,11 +35,11 @@ enum Screenshots {
         print("wrote screenshots to \(dir)")
     }
 
-    private static func panel(_ store: Store, _ settings: Settings, height: CGFloat) -> some View {
+    private static func panel(_ store: Store, _ settings: Settings, height: CGFloat, width: CGFloat = 380) -> some View {
         PanelChrome {
             ContentView(store: store, settings: settings, showMenu: {}, configure: {}, staticLayout: true)
         }
-        .frame(width: 380, height: height)
+        .frame(width: width, height: height)
         .padding(30)
         .background(Color.clear)
     }

@@ -111,7 +111,7 @@ struct ContentView: View {
             Spacer(minLength: 4)
             if !store.changed.isEmpty {
                 Button { store.acknowledgeAll() } label: {
-                    Text("\(store.changed.count) new")
+                    Text("\(store.changed.count) new").lineLimit(1).fixedSize()
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Capsule().fill(Color.accentColor))
@@ -198,10 +198,11 @@ struct ContentView: View {
     // MARK: Tabs
 
     private var tabBar: some View {
-        HStack(spacing: 4) {
-            tabButton(.mine, title: "Mine", icon: "person.fill", count: store.mine.count, key: "1")
-            tabButton(.reviewing, title: "Reviewing", icon: "eye", count: store.reviewing.count, key: "2")
-            tabButton(.open, title: "Needs reviewer", icon: "person.badge.plus", count: store.open.count, key: "3")
+        // Equal thirds; switches to short labels without icons, then icons only, when the panel gets too narrow for the longest one.
+        ViewThatFits(in: .horizontal) {
+            tabRow(.full)
+            tabRow(.label)
+            tabRow(.icon)
         }
         .padding(3)
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
@@ -211,20 +212,34 @@ struct ContentView: View {
         .padding(.bottom, bottom ? 0 : 8)
     }
 
-    private func tabButton(_ tab: Tab, title: String, icon: String, count: Int, key: KeyEquivalent) -> some View {
+    private enum TabStyle { case full, label, icon }
+
+    private func tabRow(_ style: TabStyle) -> some View {
+        EqualWidthRow(spacing: 4) {
+            tabButton(.mine, title: "Mine", short: "Mine", icon: "person.fill", count: store.mine.count, key: "1", style: style)
+            tabButton(.reviewing, title: "Reviewing", short: "Reviewing", icon: "eye", count: store.reviewing.count, key: "2", style: style)
+            tabButton(.open, title: "Needs reviewer", short: "Open", icon: "person.badge.plus", count: store.open.count, key: "3", style: style)
+        }
+    }
+
+    private func tabButton(_ tab: Tab, title: String, short: String, icon: String, count: Int, key: KeyEquivalent, style: TabStyle) -> some View {
         let selected = settings.tab == tab
         let fresh = store.changedCount(tab)
         return Button { settings.tab = tab } label: {
             HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 10))
-                Text(title).font(.system(size: 11, weight: selected ? .semibold : .regular))
-                    .lineLimit(1).minimumScaleFactor(0.8)
+                if style != .label { Image(systemName: icon).font(.system(size: 10, weight: .medium)) }
+                if style != .icon {
+                    Text(style == .full ? title : short).font(.system(size: 11, weight: .medium)).lineLimit(1).fixedSize()
+                }
                 Text("\(count)")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .monospacedDigit()
                     .padding(.horizontal, 5).padding(.vertical, 1)
                     .background(Capsule().fill(fresh > 0 ? Color.accentColor : Color.primary.opacity(0.12)))
                     .foregroundStyle(fresh > 0 ? Color.white : Color.primary)
+                    .fixedSize()
             }
+            .padding(.horizontal, 6)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
             .background {
@@ -244,6 +259,7 @@ struct ContentView: View {
         .foregroundStyle(selected ? .primary : .secondary)
         .keyboardShortcut(key, modifiers: .command)
         .help("\(title) (⌘\(key.character))")
+        .accessibilityLabel("\(title), \(count)")
     }
 
     // MARK: Lists
@@ -758,5 +774,28 @@ enum AppMark {
         }
         img.isTemplate = true
         return img
+    }
+}
+
+/// Lays its children out in equal-width columns; its ideal width fits the widest child in every column.
+struct EqualWidthRow: Layout {
+    var spacing: CGFloat = 0
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let ideal = subviews.map { $0.sizeThatFits(.unspecified) }
+        let widest = ideal.map(\.width).max() ?? 0
+        let gaps = spacing * CGFloat(subviews.count - 1)
+        let height = ideal.map(\.height).max() ?? 0
+        return CGSize(width: proposal.width ?? (widest * CGFloat(subviews.count) + gaps), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let w = (bounds.width - spacing * CGFloat(subviews.count - 1)) / CGFloat(subviews.count)
+        for (i, v) in subviews.enumerated() {
+            v.place(at: CGPoint(x: bounds.minX + CGFloat(i) * (w + spacing), y: bounds.minY),
+                    proposal: ProposedViewSize(width: w, height: bounds.height))
+        }
     }
 }
